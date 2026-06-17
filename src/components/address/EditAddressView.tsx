@@ -1,0 +1,231 @@
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { ArrowLeft, Lock } from 'lucide-react';
+import { AddressCodeDisplay } from '@/components/address/AddressCodeDisplay';
+import { StepGPS, type StepGpsValue } from '@/components/forms/AddressForm/StepGPS';
+import {
+  StepInstructions,
+  type StepInstructionsValue,
+} from '@/components/forms/AddressForm/StepInstructions';
+import { StepPhoto, type StepPhotoValue } from '@/components/forms/AddressForm/StepPhoto';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { useToast } from '@/components/ui/Toast';
+import { ApiError, api } from '@/lib/api';
+import { buildAssembledText } from '@/lib/utils';
+import type { PublicAddress } from '@/types/api';
+
+export interface EditAddressViewProps {
+  code: string;
+}
+
+type LoadState =
+  | { kind: 'loading' }
+  | { kind: 'ok'; address: PublicAddress }
+  | { kind: 'error' };
+
+export function EditAddressView({ code: rawCode }: EditAddressViewProps) {
+  const code = rawCode.toUpperCase();
+  const router = useRouter();
+  const toast = useToast();
+
+  const [state, setState] = useState<LoadState>({ kind: 'loading' });
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const address = await api.ownerAddress(code);
+        if (!cancelled) setState({ kind: 'ok', address });
+      } catch (err) {
+        if (cancelled) return;
+        if (err instanceof ApiError && (err.status === 404 || err.status === 410)) {
+          toast.show({
+            message: "Cette adresse n'est plus modifiable.",
+            variant: 'error',
+          });
+          router.replace('/dashboard');
+        }
+        setState({ kind: 'error' });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [code, router, toast]);
+
+  const patchAndAck = useCallback(
+    async (
+      body: Parameters<typeof api.updateAddress>[1],
+      mergeAddress: (current: PublicAddress) => PublicAddress,
+      successMessage: string,
+    ) => {
+      try {
+        await api.updateAddress(code, body);
+        setState((current) =>
+          current.kind === 'ok'
+            ? { kind: 'ok', address: mergeAddress(current.address) }
+            : current,
+        );
+        toast.show({ message: successMessage, variant: 'success' });
+        router.push(`/dashboard/address/${code}`);
+      } catch {
+        toast.show({
+          message: "Impossible d'enregistrer la modification. Réessayez.",
+          variant: 'error',
+        });
+      }
+    },
+    [code, router, toast],
+  );
+
+  const handlePhoto = useCallback(
+    (value: StepPhotoValue) =>
+      patchAndAck(
+        { photoUrl: value.photoUrl },
+        (addr) => ({ ...addr, photoUrl: value.photoUrl }),
+        'Photo mise à jour.',
+      ),
+    [patchAndAck],
+  );
+
+  const handleInstructions = useCallback(
+    (value: StepInstructionsValue) =>
+      patchAndAck(
+        {
+          instructions: {
+            steps: value.steps,
+            assembledText: value.assembledText,
+          },
+        },
+        (addr) => ({
+          ...addr,
+          instructions: {
+            steps: value.steps,
+            assembledText: value.assembledText || buildAssembledText(value.steps),
+          },
+        }),
+        'Instructions mises à jour.',
+      ),
+    [patchAndAck],
+  );
+
+  const handleGps = useCallback(
+    (value: StepGpsValue) =>
+      patchAndAck(
+        { coordinates: { lat: value.lat, lng: value.lng } },
+        (addr) => ({ ...addr, gps: { lat: value.lat, lng: value.lng } }),
+        'Position mise à jour.',
+      ),
+    [patchAndAck],
+  );
+
+  if (state.kind === 'loading') {
+    return (
+      <section className="mx-auto w-full max-w-2xl px-4 sm:px-6 py-6 flex flex-col gap-6">
+        <Skeleton width={200} height={28} />
+        <Skeleton width="100%" height={120} count={3} />
+      </section>
+    );
+  }
+
+  if (state.kind === 'error') {
+    return (
+      <section
+        role="alert"
+        className="mx-auto w-full max-w-md px-4 sm:px-6 py-12 text-center"
+      >
+        <p className="text-text-primary">Impossible de charger cette adresse.</p>
+      </section>
+    );
+  }
+
+  const { address } = state;
+
+  return (
+    <section className="mx-auto w-full max-w-2xl px-4 sm:px-6 py-6 flex flex-col gap-6">
+      <Link
+        href={`/dashboard/address/${code}`}
+        className="text-sm text-text-muted hover:text-text-primary inline-flex items-center gap-1 self-start"
+      >
+        <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Vue propriétaire
+      </Link>
+
+      <header className="flex flex-col gap-3">
+        <h1 className="font-display font-bold text-h2 text-text-primary">
+          Modifier mon adresse
+        </h1>
+        <div className="flex flex-col gap-2">
+          <AddressCodeDisplay code={address.code} size="sm" showCopyButton={false} />
+          <p className="text-xs text-text-muted inline-flex items-center gap-1.5">
+            <Lock className="h-3 w-3" aria-hidden="true" /> Le code ne change
+            jamais — il reste l'identifiant permanent de votre porte.
+          </p>
+        </div>
+      </header>
+
+      <EditSection
+        title="Photo du portail"
+        description="Remplacez la photo si votre portail a été repeint, déplacé ou si l'ancien cliché manque de netteté."
+      >
+        <StepPhoto
+          value={{ photoUrl: address.photoUrl }}
+          onComplete={(v) => void handlePhoto(v)}
+          submitLabel="Continuer"
+        />
+      </EditSection>
+
+      <EditSection
+        title="Instructions d'accès"
+        description="Ajoutez ou reformulez vos étapes pour qu'un visiteur les suive sans hésitation."
+      >
+        <StepInstructions
+          value={{
+            steps: address.instructions.steps,
+            assembledText: address.instructions.assembledText,
+          }}
+          onComplete={(v) => void handleInstructions(v)}
+        />
+      </EditSection>
+
+      <EditSection
+        title="Position GPS"
+        description="Recapturez la position depuis votre portail pour améliorer la précision."
+      >
+        <StepGPS
+          value={{ lat: address.gps.lat, lng: address.gps.lng }}
+          onComplete={(v) => void handleGps(v)}
+        />
+      </EditSection>
+    </section>
+  );
+}
+
+function EditSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section
+      aria-labelledby={title}
+      className="bg-surface rounded-lg border border-border shadow-sm p-5 sm:p-6 flex flex-col gap-4"
+    >
+      <header className="flex flex-col gap-1">
+        <h2 className="font-display font-bold text-h3 text-text-primary">
+          {title}
+        </h2>
+        <p className="text-sm text-text-muted">{description}</p>
+      </header>
+      {children}
+    </section>
+  );
+}
+
+export default EditAddressView;

@@ -1,0 +1,268 @@
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { AddressForm } from '@/components/forms/AddressForm';
+import { ToastProvider } from '@/components/ui/Toast';
+
+// Don't load Leaflet in jsdom (StepGPS's preview map + AddressView use it).
+jest.mock('@/components/map/MapNavigator', () => ({
+  __esModule: true,
+  MapNavigator: () => <div data-testid="map-navigator" />,
+  default: () => <div data-testid="map-navigator" />,
+}));
+
+const push = jest.fn();
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push,
+    replace: jest.fn(),
+    back: jest.fn(),
+    prefetch: jest.fn(),
+    refresh: jest.fn(),
+  }),
+  usePathname: () => '/dashboard/address/new',
+  useSearchParams: () => new URLSearchParams(),
+}));
+
+function renderForm() {
+  return render(
+    <ToastProvider>
+      <AddressForm />
+    </ToastProvider>,
+  );
+}
+
+function mockGeolocation(
+  result: 'success' | 'denied',
+  coords: { lat: number; lng: number } = { lat: 6.367, lng: 2.425 },
+) {
+  // StepGPS uses watchPosition (continuous) + clearWatch ; on garde
+  // getCurrentPosition pour la rétrocompatibilité si d'autres composants
+  // l'invoquent dans la même session.
+  const successPosition = {
+    coords: {
+      latitude: coords.lat,
+      longitude: coords.lng,
+      accuracy: 10,
+      altitude: null,
+      altitudeAccuracy: null,
+      heading: null,
+      speed: null,
+      toJSON() {
+        return {};
+      },
+    },
+    timestamp: Date.now(),
+    toJSON() {
+      return {};
+    },
+  } as GeolocationPosition;
+  const errorPayload = {
+    code: 1,
+    message: 'denied',
+    PERMISSION_DENIED: 1,
+    POSITION_UNAVAILABLE: 2,
+    TIMEOUT: 3,
+  } as GeolocationPositionError;
+
+  const watchPosition = jest.fn().mockImplementation(
+    (success: PositionCallback, error?: PositionErrorCallback) => {
+      if (result === 'success') {
+        success(successPosition);
+      } else {
+        error?.(errorPayload);
+      }
+      return 1; // watch ID
+    },
+  );
+  const getCurrentPosition = jest.fn().mockImplementation(
+    (success: PositionCallback, error?: PositionErrorCallback) => {
+      if (result === 'success') {
+        success(successPosition);
+      } else {
+        error?.(errorPayload);
+      }
+    },
+  );
+  const clearWatch = jest.fn();
+  Object.defineProperty(navigator, 'geolocation', {
+    configurable: true,
+    value: { getCurrentPosition, watchPosition, clearWatch },
+  });
+  return watchPosition;
+}
+
+async function completeQuartier(user: ReturnType<typeof userEvent.setup>) {
+  await screen.findByRole('radio', { name: /akpakpa/i });
+  await user.click(screen.getByRole('radio', { name: /akpakpa/i }));
+  await user.click(screen.getByRole('button', { name: /continuer/i }));
+}
+
+describe('AddressForm', () => {
+  beforeEach(() => {
+    push.mockClear();
+  });
+
+  it('navigates through all 5 steps and shows the success screen with the created code', async () => {
+    const user = userEvent.setup();
+    mockGeolocation('success', { lat: 6.367, lng: 2.425 });
+    renderForm();
+
+    // Step 1 — Quartier.
+    await completeQuartier(user);
+
+    // Step 2 — GPS (granted automatically, 10 m accuracy → seuil atteint).
+    await screen.findByText(/6\.36700° N/i);
+    await user.click(
+      screen.getByRole('button', { name: /je suis devant ma porte/i }),
+    );
+
+    // Step 3 — Instructions: fill the 3 prompts.
+    const inputs = await screen.findAllByLabelText(
+      /depuis quel repère|quelle direction|reconnaître le lieu/i,
+    );
+    expect(inputs).toHaveLength(3);
+    await user.type(inputs[0], 'Partir du marché Dantokpa');
+    await user.type(inputs[1], '2ème rue à droite');
+    await user.type(inputs[2], 'Portail bleu étoile jaune');
+    await user.click(screen.getByRole('button', { name: /^continuer$/i }));
+
+    // Step 4 — Catégorie : choisir Domicile.
+    await user.click(await screen.findByRole('radio', { name: /^domicile$/i }));
+    await user.click(screen.getByRole('button', { name: /^continuer$/i }));
+
+    // Step 5 — Photo: upload a fake file, then submit.
+    const fileInput = screen.getByLabelText(/sélectionnez une photo/i);
+    const file = new File(['x'], 'portail.jpg', { type: 'image/jpeg' });
+    await user.upload(fileInput as HTMLInputElement, file);
+
+    await user.click(screen.getByRole('button', { name: /uploader la photo/i }));
+    // The mock cloudinary helper resolves in ~1.5s.
+    await waitFor(
+      () => {
+        expect(
+          screen.queryByRole('button', { name: /upload en cours/i }),
+        ).not.toBeInTheDocument();
+      },
+      { timeout: 5000 },
+    );
+
+    await user.click(screen.getByRole('button', { name: /créer mon adresse/i }));
+
+    // Created screen.
+    const screenSection = await screen.findByRole('status', undefined, { timeout: 5000 });
+    expect(
+      within(screenSection).getByText(/adresse créée/i),
+    ).toBeInTheDocument();
+    // Code generated by the mock follows AKP-XXXX.
+    const codeNode = within(screenSection).getByLabelText(/code de votre adresse/i);
+    expect(codeNode.textContent).toMatch(/^AKP-[A-Z0-9]{4}$/);
+  }, 20000);
+
+  it('interrupts with the duplicate interstitial when an address sits within 15 m, then lets the user create anyway', async () => {
+    const user = userEvent.setup();
+    // Coords identical to the AKP-7X3K fixture → distance 0 m → duplicate.
+    mockGeolocation('success', { lat: 6.3676, lng: 2.4252 });
+    renderForm();
+
+    await completeQuartier(user);
+
+    // Step 2 — GPS captured; validate triggers the proximity check.
+    await screen.findByText(/6\.36760° N/i);
+    await user.click(
+      screen.getByRole('button', { name: /je suis devant ma porte/i }),
+    );
+
+    // Interstitial appears with the nearby address + attach affordance.
+    await screen.findByText(/des adresses existent près de vous/i, undefined, {
+      timeout: 5000,
+    });
+    expect(
+      screen.getByRole('button', { name: /se rattacher/i }),
+    ).toBeInTheDocument();
+
+    // "Créer quand même" proceeds to the instructions step.
+    await user.click(
+      screen.getByRole('button', { name: /créer quand même/i }),
+    );
+    const inputs = await screen.findAllByLabelText(
+      /depuis quel repère|quelle direction|reconnaître le lieu/i,
+    );
+    expect(inputs).toHaveLength(3);
+  }, 20000);
+
+  it('keeps the "Continuer" button disabled while fewer than 2 instruction steps are filled', async () => {
+    const user = userEvent.setup();
+    mockGeolocation('success');
+    renderForm();
+
+    await completeQuartier(user);
+    await screen.findByText(/° N,/i);
+    await user.click(
+      screen.getByRole('button', { name: /je suis devant ma porte/i }),
+    );
+
+    // On step 3 — the submit button starts disabled (0/2).
+    const submit = await screen.findByRole('button', { name: /minimum 2 étapes/i });
+    expect(submit).toBeDisabled();
+
+    // One filled — still disabled (1/2).
+    const inputs = await screen.findAllByLabelText(
+      /depuis quel repère|quelle direction|reconnaître le lieu/i,
+    );
+    await user.type(inputs[0], 'Une étape');
+    expect(
+      screen.getByRole('button', { name: /minimum 2 étapes/i }),
+    ).toBeDisabled();
+
+    // Two filled — enabled, label flips to "Continuer".
+    await user.type(inputs[1], 'Deuxième étape');
+    expect(screen.getByRole('button', { name: /^continuer$/i })).toBeEnabled();
+  });
+
+  it('shows the manual lat/lng form when geolocation is denied', async () => {
+    mockGeolocation('denied');
+    const user = userEvent.setup();
+    renderForm();
+
+    await completeQuartier(user);
+
+    await screen.findByText(/nous n’avons pas pu accéder à votre position/i);
+    expect(screen.getByLabelText(/^latitude$/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^longitude$/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /valider manuellement/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('rejects non-numeric manual coordinates with an inline error', async () => {
+    mockGeolocation('denied');
+    const user = userEvent.setup();
+    renderForm();
+
+    await completeQuartier(user);
+    await screen.findByText(/nous n’avons pas pu accéder/i);
+
+    await user.type(screen.getByLabelText(/^latitude$/i), 'abc');
+    await user.type(screen.getByLabelText(/^longitude$/i), '!!');
+    await user.click(screen.getByRole('button', { name: /valider manuellement/i }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/nombres décimaux/i);
+  });
+
+  it('lets the user step back to a previous step', async () => {
+    mockGeolocation('success');
+    const user = userEvent.setup();
+    renderForm();
+
+    await completeQuartier(user);
+    await screen.findByText(/° N,/i);
+
+    // From step 2, the header back button ("Retour") returns to step 1.
+    await user.click(screen.getByRole('button', { name: /^retour$/i }));
+
+    // Back on step 1 — the Akpakpa radio is rendered again.
+    expect(
+      await screen.findByRole('radio', { name: /akpakpa/i }),
+    ).toBeInTheDocument();
+  });
+});
