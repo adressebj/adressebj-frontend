@@ -8,7 +8,6 @@ import {
   QrCode,
   Shield,
   Smartphone,
-  Sparkles,
   Zap,
 } from 'lucide-react';
 import { Navbar } from '@/components/layout/Navbar';
@@ -79,23 +78,32 @@ export default function Home() {
           <div className="mx-auto max-w-[1200px] px-4 md:px-6 py-12 md:py-20 grid lg:grid-cols-[1.05fr_0.95fr] gap-12 items-center">
             {/* ── Colonne texte ── */}
             <div className="flex flex-col items-start text-left">
-              <span className="inline-flex items-center gap-2 rounded-full border border-border bg-surface/70 backdrop-blur px-3.5 py-1.5 text-xs font-medium text-text-muted animate-fade-up">
-                <span className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full rounded-full bg-primary opacity-60 animate-soft-pulse" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
-                </span>
-                Infrastructure d&apos;adressage national · Bénin
-              </span>
-
               <h1
                 id="hero-title"
-                className="mt-5 font-display font-black tracking-[-0.03em] text-[clamp(2.5rem,6vw,4.25rem)] leading-[0.98] text-text-primary animate-rise"
+                className="font-display font-black tracking-[-0.03em] text-[clamp(2.5rem,6vw,4.25rem)] leading-[0.98] text-text-primary animate-rise"
               >
                 Une adresse précise
                 <br />
                 pour{' '}
-                <span className="italic font-semibold text-primary">
+                <span className="relative inline-block italic font-semibold text-primary">
                   chaque porte
+                  {/* Soulignement dessiné à la main — trait gold légèrement
+                     irrégulier qui se trace à l'apparition. */}
+                  <svg
+                    viewBox="0 0 300 16"
+                    preserveAspectRatio="none"
+                    aria-hidden="true"
+                    className="absolute left-0 -bottom-1.5 w-full h-[0.42em] overflow-visible text-accent"
+                  >
+                    <path
+                      d="M4 11 C 56 4, 104 15, 158 9 S 248 3, 296 12"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="6"
+                      strokeLinecap="round"
+                      className="animate-route"
+                    />
+                  </svg>
                 </span>{' '}
                 du Bénin.
               </h1>
@@ -322,11 +330,7 @@ export default function Home() {
               className="absolute -top-20 left-1/2 -translate-x-1/2 w-[34rem] h-[34rem] rounded-full bg-primary/30 blur-3xl animate-hero-glow -z-10"
             />
             <div className="relative flex flex-col items-center">
-              <span className="inline-flex items-center gap-2 rounded-full bg-white/10 ring-1 ring-white/15 px-4 py-1.5 text-sm text-white/80">
-                <Sparkles className="h-4 w-4 text-accent" aria-hidden="true" />
-                Gratuit pour les habitants
-              </span>
-              <h2 className="mt-6 font-display font-bold text-[clamp(2rem,5vw,3.5rem)] leading-[1.02] text-text-inverse max-w-2xl">
+              <h2 className="font-display font-bold text-[clamp(2rem,5vw,3.5rem)] leading-[1.02] text-text-inverse max-w-2xl">
                 Donnez une adresse à votre porte.
               </h2>
               <p className="mt-4 max-w-xl text-lg text-white/70">
