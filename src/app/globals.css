@@ -86,30 +86,36 @@
    BASE
    ════════════════════════════════════════════════════════════════════════ */
 
-html {
-  scroll-behavior: smooth;
-}
+/* Styles de base dans @layer base : les utilitaires Tailwind (layer
+   `utilities`) reprennent ainsi la priorité. Sans ce layer, la règle de
+   couleur sur h1–h6 — non layered — battrait toute classe `text-*`, rendant
+   par ex. un titre `text-text-inverse` invisible sur fond sombre. */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
 
-html, body {
-  background-color: var(--color-bg);
-  color: var(--color-text-primary);
-  font-family: var(--font-body);
-  line-height: 1.6;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
+  html, body {
+    background-color: var(--color-bg);
+    color: var(--color-text-primary);
+    font-family: var(--font-body);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
 
-h1, h2, h3, h4, h5, h6 {
-  font-family: var(--font-display);
-  color: var(--color-text-primary);
-  letter-spacing: -0.02em;
-  line-height: 1.05;
-  font-optical-sizing: auto;
-}
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    color: var(--color-text-primary);
+    letter-spacing: -0.02em;
+    line-height: 1.05;
+    font-optical-sizing: auto;
+  }
 
-::selection {
-  background-color: var(--color-primary);
-  color: var(--color-text-inverse);
+  ::selection {
+    background-color: var(--color-primary);
+    color: var(--color-text-inverse);
+  }
 }
 
 /* ─── Code adresse — objet typographique signature (AAA-0000) ──────────── */
