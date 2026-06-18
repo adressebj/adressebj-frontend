@@ -94,7 +94,7 @@ export function Navbar() {
 
   return (
     <>
-      <header className="sticky top-0 z-30 w-full h-16 bg-surface shadow-sm">
+      <header className="sticky top-0 z-30 w-full h-16 bg-bg/85 backdrop-blur-md border-b border-border/80">
         <nav className="mx-auto flex h-full max-w-[1280px] items-center justify-between px-4 md:px-6">
           <div className="flex items-center gap-2">
             {isAuthenticated ? (
@@ -123,8 +123,10 @@ export function Navbar() {
                   href={link.href}
                   aria-current={active ? 'page' : undefined}
                   className={classNames(
-                    'text-sm p-2 rounded-lg transition-colors hover:bg-surface-muted',
-                    active ? 'font-bold text-primary' : 'text-text-muted',
+                    'text-sm px-3.5 py-2 rounded-full transition-colors',
+                    active
+                      ? 'font-semibold text-primary bg-primary-surface'
+                      : 'text-text-muted hover:bg-surface-muted hover:text-text-primary',
                   )}
                 >
                   {link.label}
@@ -133,19 +135,27 @@ export function Navbar() {
             })}
           </div>
 
-          <div className="flex items-center">
+          <div className="flex items-center gap-2">
             {/* Le visiteur non-connecté garde un accès rapide à l'auth ;
                le connecté passe par le drawer (hamburger gauche) qui
                contient déjà Alertes — on évite le doublon de cloche en
                haut. */}
             {isReady && !isAuthenticated ? (
-              <Link
-                href="/auth"
-                aria-label="Se connecter"
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-muted text-text-muted hover:bg-border transition-colors"
-              >
-                <User className="h-5 w-5" aria-hidden="true" />
-              </Link>
+              <>
+                <Link
+                  href="/carte"
+                  className="hidden sm:inline-flex text-sm px-3.5 py-2 rounded-full text-text-muted hover:bg-surface-muted hover:text-text-primary transition-colors"
+                >
+                  Explorer
+                </Link>
+                <Link
+                  href="/auth"
+                  className="inline-flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-full bg-primary text-text-inverse shadow-sm hover:bg-primary-hover hover:shadow-md transition-all tap-press"
+                >
+                  <User className="h-4 w-4" aria-hidden="true" />
+                  Connexion
+                </Link>
+              </>
             ) : null}
           </div>
         </nav>

@@ -1,10 +1,10 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter, Lexend } from 'next/font/google';
+import { Inter, Fraunces, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 import { ServiceWorkerRegistration } from '@/components/layout/ServiceWorkerRegistration';
 import { ToastProvider } from '@/components/ui/Toast';
 
-// Inter — corps de texte & labels (Design System §3)
+// Inter — corps de texte, labels & UI (Design System « Repère »)
 const inter = Inter({
   subsets: ['latin'],
   weight: ['400', '500', '600', '700'],
@@ -12,12 +12,22 @@ const inter = Inter({
   variable: '--font-body',
 });
 
-// Lexend — titres, conçue pour la lisibilité maximale (Design System §3)
-const lexend = Lexend({
+// Fraunces — display éditorial à fort caractère, pour les grands titres.
+// L'âme « modernisme africain » : chaleureux, optique, distinctif.
+const fraunces = Fraunces({
   subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
+  weight: ['400', '500', '600', '700', '900'],
+  style: ['normal', 'italic'],
   display: 'swap',
   variable: '--font-display',
+});
+
+// JetBrains Mono — le code adresse (AAA-0000) traité comme objet signature.
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ['latin'],
+  weight: ['400', '500', '700'],
+  display: 'swap',
+  variable: '--font-mono',
 });
 
 export const metadata: Metadata = {
@@ -36,7 +46,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#1A7F50',
+  themeColor: '#0E6B43',
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
@@ -48,7 +58,7 @@ export default function RootLayout({
   return (
     <html
       lang="fr"
-      className={`${inter.variable} ${lexend.variable}`}
+      className={`${inter.variable} ${fraunces.variable} ${jetbrainsMono.variable}`}
       suppressHydrationWarning
     >
       {/*

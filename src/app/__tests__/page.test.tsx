@@ -41,14 +41,17 @@ describe('Landing page (/)', () => {
     expect(
       screen.getByRole('heading', {
         level: 1,
-        name: /trouvez n.?importe quelle adresse au bénin/i,
+        name: /chaque porte du bénin/i,
       }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('heading', { level: 2, name: /comment ça marche/i }),
+      screen.getByRole('heading', { level: 2, name: /adresser un lieu/i }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('heading', { level: 2, name: /pourquoi adressebj/i }),
+      screen.getByRole('heading', {
+        level: 2,
+        name: /pensé pour le terrain béninois/i,
+      }),
     ).toBeInTheDocument();
   });
 
