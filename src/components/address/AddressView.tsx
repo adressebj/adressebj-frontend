@@ -18,6 +18,7 @@ import {
   Share2,
   WifiOff,
 } from 'lucide-react';
+import { Navbar } from '@/components/layout/Navbar';
 import { StarRating } from '@/components/forms/StarRating';
 import { CategoryBadge } from '@/components/address/CategoryBadge';
 import { QRCodeDisplay } from '@/components/address/QRCodeDisplay';
@@ -391,29 +392,11 @@ export function AddressView({ code }: AddressViewProps) {
 
   const { address } = state;
   return (
-    <main className="min-h-screen flex flex-col bg-bg">
-      {/* Top app bar — back, code, share */}
-      <header className="bg-surface sticky top-0 z-30 flex items-center justify-between px-4 h-16 w-full shadow-sm">
-        <button
-          type="button"
-          onClick={() => router.push('/')}
-          aria-label="Retour"
-          className="flex items-center justify-center p-2 rounded-full text-text-primary hover:bg-surface-muted transition-colors cursor-pointer"
-        >
-          <ArrowLeft className="h-6 w-6" aria-hidden="true" />
-        </button>
-        <h1 className="font-display font-semibold text-2xl text-text-primary">
-          {address.code}
-        </h1>
-        <button
-          type="button"
-          onClick={() => void handleShare()}
-          aria-label="Partager"
-          className="flex items-center justify-center p-2 rounded-full text-text-primary hover:bg-surface-muted transition-colors cursor-pointer"
-        >
-          <Share2 className="h-6 w-6" aria-hidden="true" />
-        </button>
-      </header>
+    <main className="min-h-screen flex flex-col bg-bg md:pt-20">
+      {/* Navbar partagée — le code, le partage et le retour à l'accueil sont
+         déjà présents dans le contenu (carte d'info + footer), l'ancienne
+         app bar bespoke était donc redondante. */}
+      <Navbar />
 
       {isOffline ? (
         <div

@@ -50,7 +50,9 @@ export default function DashboardLayout({
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar />
-      <main className="flex-1">{children}</main>
+      {/* Sur desktop la navbar est en overlay (fixed) : on réserve la hauteur
+         de la pilule flottante pour que le contenu ne passe pas dessous. */}
+      <main className="flex-1 md:pt-20">{children}</main>
     </div>
   );
 }
