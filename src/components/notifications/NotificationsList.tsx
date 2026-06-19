@@ -46,7 +46,7 @@ export function NotificationsList({
 }: NotificationsListProps) {
   if (notifications.length === 0) {
     return (
-      <div className="card p-8 flex flex-col items-center text-center gap-3 animate-fade-up">
+      <div className="card motif-paper p-8 flex flex-col items-center text-center gap-3 animate-fade-up">
         <div className="relative">
           <span
             aria-hidden="true"
@@ -63,8 +63,8 @@ export function NotificationsList({
           Aucune alerte pour le moment
         </h2>
         <p className="text-sm text-text-muted max-w-sm">
-          Vous serez notifié ici dès qu&apos;une de vos adresses est validée,
-          signalée ou mise à jour.
+          On vous préviendra ici dès qu&apos;il se passe quelque chose sur une de
+          vos adresses.
         </p>
       </div>
     );
@@ -110,10 +110,12 @@ function NotificationItem({
   staggerIdx: number;
 }) {
   const { icon: Icon, tone } = KIND_META[notification.kind];
+  const clickable = !!notification.addressCode;
   const content = (
     <div
       className={classNames(
         'card p-4 flex items-start gap-3',
+        clickable && 'card-interactive',
         !notification.read && 'ring-2 ring-primary/20',
       )}
     >
@@ -149,7 +151,6 @@ function NotificationItem({
         <span
           aria-label="Non lue"
           className="absolute top-3 right-3 h-2 w-2 rounded-full bg-danger"
-          style={{ position: 'absolute' }}
         />
       ) : null}
     </div>

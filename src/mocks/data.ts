@@ -146,6 +146,29 @@ export const quartiers: Quartier[] = [
   },
 ];
 
+// Repères connus (POI) — synthétiques pour le mock. En production le backend
+// les sert via Overpass (POI OSM proches du GPS), endpoint interne
+// `/internal/nearby-landmark` (CDC v5 §Besoin 1 + §Overpass). Placés dans les
+// polygones des quartiers de démo ; celui d'Agblangandan est tout proche de la
+// position réelle d'un dev sur place, pour démontrer le cas « repère trouvé ».
+export const landmarks: Array<{
+  name: string;
+  category: string;
+  lat: number;
+  lng: number;
+}> = [
+  // Agblangandan (autour de la position dev 6.3831 / 2.5208)
+  { name: 'Station-service PK10', category: 'Station', lat: 6.3832, lng: 2.5210 },
+  { name: 'Pharmacie d’Agblangandan', category: 'Pharmacie', lat: 6.3825, lng: 2.5201 },
+  // Akpakpa
+  { name: 'Marché Dantokpa', category: 'Marché', lat: 6.3660, lng: 2.4300 },
+  { name: 'Pharmacie Les Potiers', category: 'Pharmacie', lat: 6.3705, lng: 2.4252 },
+  // Cadjèhoun
+  { name: 'Carrefour Cadjèhoun', category: 'Repère', lat: 6.3625, lng: 2.3925 },
+  // Fidjrossè
+  { name: 'Église Saint-Michel', category: 'Édifice', lat: 6.3575, lng: 2.3780 },
+];
+
 export const user: User = {
   id: 'user_demo',
   phone: '+22960000000',
@@ -903,7 +926,7 @@ export const fieldNotes: Record<string, import('@/types/api').FieldNote[]> = {
       id: 'fn_1',
       addressCode: 'AKP-7X3K',
       message:
-        "Difficile de repérer le portail la nuit — pas d'éclairage public dans la ruelle.",
+        "Difficile de repérer le portail la nuit, il n'y a pas d'éclairage dans la ruelle.",
       authorPhoneMasked: '+229 ••42',
       createdAt: '2026-05-30T20:14:00Z',
     },

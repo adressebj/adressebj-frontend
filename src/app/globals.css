@@ -118,6 +118,16 @@
   }
 }
 
+/* Masque les scrollbars (rangées de chips scrollables horizontalement) tout
+   en gardant le défilement — variantes Tailwind arbitraires peu fiables. */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* ─── Code adresse — objet typographique signature (AAA-0000) ──────────── */
 .code-type {
   font-family: var(--font-mono);
@@ -140,6 +150,154 @@
 .motif-gold {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 48 48'%3E%3Cpath d='M24 0L48 24 24 48 0 24Z' fill='none' stroke='%23E0A92E' stroke-opacity='0.16' stroke-width='1.2'/%3E%3C/svg%3E");
   background-size: 48px 48px;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   MARQUEURS CARTE — découverte (`/carte`)
+   Goutte verte de marque + icône catégorie ; état actif doré synchronisé
+   avec la liste ; point muet discret pour les DOMICILE ; point « moi »
+   pulsant. Classés (pas d'inline) pour piloter hover/actif en CSS pur.
+   ════════════════════════════════════════════════════════════════════════ */
+.abj-pin {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  cursor: pointer;
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.abj-pin__drop {
+  position: absolute;
+  inset: 0;
+  background: var(--color-primary);
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  border: 3px solid #fff;
+  box-shadow: var(--shadow-md);
+  transition:
+    background 200ms ease,
+    box-shadow 220ms ease,
+    transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.abj-pin__icon {
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+}
+.abj-pin:hover .abj-pin__drop {
+  transform: rotate(-45deg) scale(1.08);
+}
+.abj-pin.is-active .abj-pin__drop {
+  background: var(--color-accent);
+  transform: rotate(-45deg) scale(1.14);
+  box-shadow:
+    0 0 0 5px color-mix(in srgb, var(--color-accent) 32%, transparent),
+    var(--shadow-lg);
+  animation: pin-active-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+.abj-pin.is-active .abj-pin__icon {
+  color: var(--color-canvas-deep);
+}
+
+@keyframes pin-active-pulse {
+  0%, 100% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--color-accent) 32%, transparent), var(--shadow-lg); }
+  50% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--color-accent) 15%, transparent), var(--shadow-lg); }
+}
+
+.abj-dot {
+  width: 9px;
+  height: 9px;
+  background: var(--color-border-strong);
+  border: 1.5px solid rgba(255, 255, 255, 0.75);
+  border-radius: 50%;
+  transition:
+    transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    background 180ms ease;
+}
+.abj-dot:hover,
+.abj-dot.is-active {
+  background: var(--color-accent);
+  transform: scale(1.5);
+}
+
+.abj-userdot {
+  position: relative;
+  width: 18px;
+  height: 18px;
+}
+.abj-userdot__core {
+  position: absolute;
+  inset: 2px;
+  border-radius: 50%;
+  background: var(--color-primary-light);
+  border: 3px solid #fff;
+  box-shadow: var(--shadow-md);
+}
+.abj-userdot__pulse {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--color-primary-light);
+}
+
+/* Popup Leaflet rhabillé au langage « carte papier » du design system. */
+.abj-popup .leaflet-popup-content-wrapper {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--color-border);
+  padding: 0;
+  overflow: hidden;
+}
+.abj-popup .leaflet-popup-content {
+  margin: 0;
+  width: 232px !important;
+}
+.abj-popup .leaflet-popup-tip {
+  box-shadow: var(--shadow-md);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .abj-pin,
+  .abj-pin__drop,
+  .abj-dot {
+    transition: none;
+  }
+}
+
+/* Contrôles Leaflet alignés sur le design system. */
+.leaflet-layer {
+  /* Filtre chaud pour harmoniser CARTO Voyager avec le thème "Repère" */
+  filter: sepia(0.12) saturate(1.15) brightness(0.98);
+}
+
+.leaflet-control-zoom {
+  border: 1px solid var(--color-border) !important;
+  border-radius: var(--radius-md) !important;
+  overflow: hidden;
+  box-shadow: var(--shadow-md) !important;
+}
+.leaflet-control-zoom a {
+  color: var(--color-text-primary) !important;
+  background: var(--color-surface) !important;
+}
+.leaflet-control-zoom a:hover {
+  background: var(--color-surface-muted) !important;
+}
+@media (max-width: 1023px) {
+  /* Pinch-zoom natif sur mobile — on masque les boutons (place réservée à la
+     recherche flottante). */
+  .leaflet-control-zoom {
+    display: none !important;
+  }
+  /* Attribution remontée au-dessus de la bottom-sheet repliée. */
+  .leaflet-bottom.leaflet-left {
+    bottom: 8.5rem;
+  }
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -267,13 +425,13 @@
   animation: hero-glow 9s ease-in-out infinite;
 }
 
-/* Le pin tombe (signature carte). */
-@keyframes pin-drop {
-  0%   { opacity: 0; transform: translateY(-32px) scale(0.8); }
-  60%  { opacity: 1; transform: translateY(2px) scale(1.04); }
-  100% { opacity: 1; transform: translateY(0) scale(1); }
+/* Apparition douce des pins (remplace pin-drop). */
+@keyframes pin-appear {
+  0%   { opacity: 0; transform: scale(0.6); }
+  60%  { opacity: 1; transform: scale(1.05); }
+  100% { opacity: 1; transform: scale(1); }
 }
-.animate-pin-drop { animation: pin-drop 700ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-pin-appear { animation: pin-appear 500ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
 
 /* Tracé d'itinéraire qui se dessine. */
 @keyframes route-draw {
@@ -306,7 +464,7 @@
   .animate-soft-pulse,
   .animate-burst,
   .animate-hero-glow,
-  .animate-pin-drop,
+  .animate-pin-appear,
   .animate-marquee,
   .skeleton-shimmer { animation: none; }
   .animate-route { stroke-dashoffset: 0; animation: none; }

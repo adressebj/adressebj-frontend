@@ -58,9 +58,8 @@ export function StepCategory({ value, onComplete }: StepCategoryProps) {
           De quoi s&apos;agit-il&nbsp;?
         </h2>
         <p className="text-sm text-text-muted">
-          Choisissez la catégorie qui décrit le mieux ce lieu. C&apos;est
-          obligatoire et ça aide les visiteurs à comprendre ce qu&apos;ils
-          trouveront.
+          Choisissez ce qui correspond le mieux à ce lieu. Ça aide les visiteurs
+          à savoir où ils vont.
         </p>
       </header>
 
@@ -133,17 +132,15 @@ export function StepCategory({ value, onComplete }: StepCategoryProps) {
           <p className="text-sm text-text-primary leading-relaxed">
             {isDomicile ? (
               <>
-                <span className="font-semibold">Confidentialité renforcée&nbsp;:</span>{' '}
-                votre adresse apparaîtra en marqueur muet sur la carte publique —
-                ni photo, ni code visibles à l&apos;exploration. Elle reste
-                résolvable par lien direct.
+                <span className="font-semibold">Adresse privée&nbsp;:</span>{' '}
+                elle n&apos;apparaîtra pas sur la carte. Les gens pourront quand
+                même y aller avec son lien ou son code.
               </>
             ) : (
               <>
-                <span className="font-semibold">Visible sur la carte publique&nbsp;:</span>{' '}
-                votre adresse apparaîtra avec sa photo et son code lors de
-                l&apos;exploration. Vous pourrez la retirer de la carte à tout
-                moment depuis votre tableau de bord.
+                <span className="font-semibold">Visible par tous&nbsp;:</span>{' '}
+                votre adresse apparaîtra sur la carte, avec sa photo. Vous
+                pourrez la retirer quand vous voulez.
               </>
             )}
           </p>
@@ -152,8 +149,8 @@ export function StepCategory({ value, onComplete }: StepCategoryProps) {
         <div className="flex items-start gap-2.5 rounded-md bg-surface-muted border border-border px-4 py-3">
           <Info className="h-4 w-4 text-text-muted shrink-0 mt-0.5" aria-hidden="true" />
           <p className="text-sm text-text-muted leading-relaxed">
-            La catégorie influence aussi la visibilité sur la carte publique.
-            Choisissez pour voir l&apos;effet.
+            Votre choix change aussi qui peut voir l&apos;adresse sur la carte.
+            Choisissez pour voir.
           </p>
         </div>
       )}

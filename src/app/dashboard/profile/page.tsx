@@ -106,7 +106,7 @@ export default function ProfilePage() {
       toast.show({
         message: ok
           ? 'Notifications activées.'
-          : "Permission refusée — vous pouvez la rétablir depuis les paramètres du navigateur.",
+          : "Permission refusée. Vous pouvez la rétablir depuis les paramètres du navigateur.",
         variant: ok ? 'success' : 'error',
       });
     } finally {
@@ -223,11 +223,18 @@ export default function ProfilePage() {
   if (!me) return null;
 
   return (
-    <section className="mx-auto w-full max-w-2xl px-4 py-4 flex flex-col gap-3">
-      <h1 className="sr-only">Mon profil</h1>
+    <section className="mx-auto w-full max-w-2xl px-4 sm:px-6 py-6 flex flex-col gap-4">
+      <header className="flex flex-col gap-1 animate-fade-up">
+        <h1 className="font-display font-bold text-h2 text-text-primary">
+          Mon profil
+        </h1>
+        <p className="text-sm text-text-muted">
+          Votre numéro, vos préférences et votre compte.
+        </p>
+      </header>
 
       {/* Identity card */}
-      <section className="card rounded-xl p-6 flex flex-col items-center text-center animate-fade-up">
+      <section className="card motif-paper p-6 flex flex-col items-center text-center animate-fade-up">
         <div className="relative mb-4">
           {/* Halo doux derrière l'avatar — donne un peu de présence sans
              se prendre pour Material Design. */}
@@ -246,13 +253,13 @@ export default function ProfilePage() {
           <Phone className="h-4 w-4 text-primary" aria-hidden="true" />
           <span className="font-medium tracking-wide">{me.phone}</span>
         </p>
-        <span className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 bg-[#DCFCE7] text-success rounded-full text-xs font-medium">
+        <span className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 bg-success-light text-success rounded-full text-xs font-medium">
           <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
           Compte vérifié
         </span>
         <p className="text-xs text-text-muted mt-4 mb-3">
-          Le numéro est votre identifiant. Le changement vous déconnecte le
-          temps que le nouveau numéro prenne effet.
+          Votre numéro vous sert à vous connecter. Si vous le changez, il faudra
+          vous reconnecter avec le nouveau.
         </p>
         <Button
           variant="ghost"
@@ -264,7 +271,7 @@ export default function ProfilePage() {
       </section>
 
       {/* Preferences card */}
-      <section aria-labelledby="prefs-title" className="card rounded-xl p-4 animate-fade-up stagger-1">
+      <section aria-labelledby="prefs-title" className="card p-4 animate-fade-up stagger-1">
         <h2
           id="prefs-title"
           className="font-display font-semibold text-base text-text-primary mb-4"
@@ -282,8 +289,8 @@ export default function ProfilePage() {
                 <p className="text-base text-text-primary">Notifications push</p>
                 <p className="text-xs text-text-muted mt-0.5">
                   {push.isSupported
-                    ? 'Alertes de validation et signalements'
-                    : 'Non supportées par ce navigateur'}
+                    ? 'Pour être prévenu de ce qui se passe sur vos adresses'
+                    : 'Votre navigateur ne les gère pas'}
                 </p>
               </div>
             </div>
@@ -322,7 +329,7 @@ export default function ProfilePage() {
       </section>
 
       {/* Email card */}
-      <section aria-labelledby="email-title" className="card rounded-xl p-4 animate-fade-up stagger-2">
+      <section aria-labelledby="email-title" className="card p-4 animate-fade-up stagger-2">
         <h2
           id="email-title"
           className="font-display font-semibold text-base text-text-primary mb-4"
@@ -337,7 +344,7 @@ export default function ProfilePage() {
             onChange={(e) => setEmailDraft(e.target.value)}
             leadingIcon={<Mail className="h-4 w-4" aria-hidden="true" />}
             placeholder="vous@exemple.com"
-            hint="Sert uniquement aux communications produit. Aucune authentification par email."
+            hint="Sert seulement à vous contacter si besoin. Jamais pour vous connecter."
           />
           <Button
             variant="primary"
@@ -352,7 +359,7 @@ export default function ProfilePage() {
       </section>
 
       {/* Security card */}
-      <section aria-labelledby="security-title" className="card rounded-xl p-4 animate-fade-up stagger-3">
+      <section aria-labelledby="security-title" className="card p-4 animate-fade-up stagger-3">
         <h2
           id="security-title"
           className="font-display font-semibold text-base text-text-primary mb-4"
@@ -378,10 +385,10 @@ export default function ProfilePage() {
       {/* Danger zone card */}
       <section
         aria-labelledby="danger-title"
-        className="card rounded-xl p-4 !border-danger/40 animate-fade-up stagger-4"
+        className="card p-4 !border-danger/40 animate-fade-up stagger-4"
       >
         <h2 id="danger-title" className="text-base font-medium text-danger mb-3">
-          Zone dangereuse
+          Suppression du compte
         </h2>
         <button
           type="button"
@@ -392,7 +399,7 @@ export default function ProfilePage() {
           Supprimer mon compte
         </button>
         <p className="text-xs text-danger mt-1">
-          Action irréversible, toutes vos adresses seront désactivées
+          C’est définitif : toutes vos adresses seront désactivées.
         </p>
       </section>
 
@@ -447,9 +454,8 @@ export default function ProfilePage() {
         {phoneChangeStep === 1 ? (
           <div className="flex flex-col gap-3">
             <p className="text-sm text-text-muted">
-              Saisissez votre nouveau numéro. Un code de confirmation y sera
-              envoyé. Une fois validé, vous serez déconnecté(e) pour vous
-              reconnecter avec le nouveau numéro.
+              Entrez votre nouveau numéro. On vous y enverra un code. Une fois
+              confirmé, vous vous reconnecterez avec ce nouveau numéro.
             </p>
             <Input
               label="Nouveau numéro de téléphone"
@@ -502,15 +508,15 @@ export default function ProfilePage() {
       >
         <div className="flex flex-col gap-3 text-sm text-text-primary">
           <p>
-            Vous serez informé(e) lorsque&nbsp;:
+            On vous préviendra notamment&nbsp;:
           </p>
           <ul className="list-disc pl-5 space-y-1 text-text-muted">
-            <li>Votre adresse reçoit des retours négatifs et mérite une mise à jour.</li>
-            <li>Un administrateur a désactivé l'une de vos adresses.</li>
+            <li>quand une de vos adresses a besoin d’être corrigée&nbsp;;</li>
+            <li>quand une de vos adresses a été retirée.</li>
           </ul>
           <p className="text-text-muted">
-            Votre navigateur affichera juste après une demande de permission
-            système. Vous pourrez la révoquer à tout moment.
+            Votre navigateur va vous demander l’autorisation juste après. Vous
+            pourrez la retirer quand vous voulez.
           </p>
         </div>
       </Modal>
@@ -551,9 +557,8 @@ export default function ProfilePage() {
       >
         <div className="flex flex-col gap-4 text-sm text-text-primary">
           <p>
-            Cette action est <strong>irréversible</strong>. Vos adresses seront
-            désactivées et vos données personnelles seront supprimées sous
-            30&nbsp;jours.
+            C’est <strong>définitif</strong>. Vos adresses seront désactivées et
+            vos informations supprimées sous 30&nbsp;jours.
           </p>
           <Input
             label={`Saisissez votre numéro de téléphone (${me.phone}) pour confirmer`}

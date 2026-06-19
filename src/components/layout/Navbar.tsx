@@ -30,6 +30,7 @@ interface DrawerItem {
 
 const DRAWER_ITEMS: DrawerItem[] = [
   { href: '/', label: 'Accueil', icon: Home, match: (p) => p === '/' },
+  { href: '/carte', label: 'Explorer', icon: Compass, match: (p) => p.startsWith('/carte') },
   {
     href: '/dashboard',
     label: 'Mes adresses',
@@ -191,23 +192,24 @@ export function Navbar() {
                Connecté mobile : tout passe par le drawer (hamburger gauche).
                Connecté desktop : avatar + menu déroulant (Alertes/Profil/
                Déconnexion) — sinon aucun accès au compte sur grand écran. */}
+            {isReady ? (
+              <Link
+                href="/carte"
+                className="hidden sm:inline-flex items-center gap-2 text-sm px-3.5 py-2 rounded-full text-text-muted hover:bg-surface-muted hover:text-text-primary transition-colors"
+              >
+                <Compass className="h-4 w-4" aria-hidden="true" />
+                Explorer
+              </Link>
+            ) : null}
+
             {isReady && !isAuthenticated ? (
-              <>
-                <Link
-                  href="/carte"
-                  className="hidden sm:inline-flex items-center gap-2 text-sm px-3.5 py-2 rounded-full text-text-muted hover:bg-surface-muted hover:text-text-primary transition-colors"
-                >
-                  <Compass className="h-4 w-4" aria-hidden="true" />
-                  Explorer
-                </Link>
-                <Link
-                  href="/auth"
-                  className="inline-flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-full bg-primary text-text-inverse shadow-sm hover:bg-primary-hover hover:shadow-md transition-all tap-press"
-                >
-                  <User className="h-4 w-4" aria-hidden="true" />
-                  Connexion
-                </Link>
-              </>
+              <Link
+                href="/auth"
+                className="inline-flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-full bg-primary text-text-inverse shadow-sm hover:bg-primary-hover hover:shadow-md transition-all tap-press"
+              >
+                <User className="h-4 w-4" aria-hidden="true" />
+                Connexion
+              </Link>
             ) : null}
 
             {isReady && isAuthenticated ? (

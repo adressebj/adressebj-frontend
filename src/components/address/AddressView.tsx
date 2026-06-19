@@ -7,22 +7,24 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
-  ArrowLeft,
   Copy,
   Flag,
+  Home,
   LogIn,
   MapPin,
   Navigation as NavigationIcon,
   QrCode,
   RotateCw,
   Share2,
+  Star,
   WifiOff,
 } from 'lucide-react';
-import { Navbar } from '@/components/layout/Navbar';
-import { StarRating } from '@/components/forms/StarRating';
-import { CategoryBadge } from '@/components/address/CategoryBadge';
+import { Logo } from '@/components/ui/Logo';
+import { CategoryMedallion } from '@/components/address/CategoryMedallion';
+import { FeedbackPrompt } from '@/components/address/FeedbackPrompt';
+import { FieldNotesList } from '@/components/address/FieldNotesList';
 import { QRCodeDisplay } from '@/components/address/QRCodeDisplay';
-import { ReliabilityBadge } from '@/components/address/ReliabilityBadge';
+import { RatingSummary } from '@/components/address/RatingSummary';
 import { StepsList } from '@/components/address/StepsList';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
@@ -31,13 +33,14 @@ import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/hooks/useAuth';
 import { ApiError, api } from '@/lib/api';
 import { classNames } from '@/lib/utils';
-import type { PublicAddress } from '@/types/api';
+import type { MapNavigatorApi } from '@/components/map/MapNavigator';
+import type { FieldNote, PublicAddress } from '@/types/api';
 
 const MapNavigator = dynamic(
   () => import('@/components/map/MapNavigator').then((m) => m.MapNavigator),
   {
     ssr: false,
-    loading: () => <div className="w-full h-[320px] bg-surface-muted animate-pulse" />,
+    loading: () => <div className="w-full h-full bg-surface-muted animate-pulse" />,
   },
 );
 
@@ -51,22 +54,6 @@ type ViewState =
   | { kind: 'not_found' }
   | { kind: 'inactive'; deactivatedAt: string | null }
   | { kind: 'error' };
-
-const DIRECTION_OPTIONS = [
-  { value: '', label: 'Indiquez le sens (optionnel)' },
-  { value: 'sens-unique-nord-sud', label: 'Sens unique nord → sud' },
-  { value: 'sens-unique-sud-nord', label: 'Sens unique sud → nord' },
-  { value: 'sens-unique-est-ouest', label: 'Sens unique est → ouest' },
-  { value: 'sens-unique-ouest-est', label: 'Sens unique ouest → est' },
-  { value: 'double-sens', label: 'Double sens' },
-];
-
-const ENTRY_SIDE_OPTIONS = [
-  { value: '', label: "Indiquez le côté (optionnel)" },
-  { value: 'gauche', label: 'Côté gauche en arrivant' },
-  { value: 'droite', label: 'Côté droit en arrivant' },
-  { value: 'face', label: 'Face à un repère visible' },
-];
 
 export function AddressView({ code }: AddressViewProps) {
   const router = useRouter();
@@ -85,7 +72,6 @@ export function AddressView({ code }: AddressViewProps) {
     label: string;
   } | null>(null);
 
-  const [voting, setVoting] = useState(false);
   // 1-5 star evaluation — l'API upsert garantit qu'une nouvelle note remplace
   // l'ancienne (CDC v5 §8). Le score courant vient du PublicAddress.myRating.
   const [stars, setStars] = useState(0);
@@ -97,12 +83,20 @@ export function AddressView({ code }: AddressViewProps) {
   const [reporting, setReporting] = useState(false);
 
   const [arrived, setArrived] = useState(false);
-  const [contributionOpen, setContributionOpen] = useState(false);
-  const [direction, setDirection] = useState('');
-  const [entrySide, setEntrySide] = useState('');
-  const [contributing, setContributing] = useState(false);
+  // Le parcours est séquentiel : « J'y suis » n'apparaît qu'après le lancement
+  // d'une navigation, et le dialogue de retour (note → contribution) n'est
+  // présenté qu'à l'arrivée confirmée — la note porte sur un trajet réellement
+  // effectué (CDC §327).
+  const [navigationStarted, setNavigationStarted] = useState(false);
+  // Dialogue de retour présenté explicitement à l'arrivée (note + contribution).
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
-  const mapRef = useRef<HTMLDivElement | null>(null);
+  // Informations terrain approuvées (lecture seule) — texte libre publié après
+  // modération (CDC Frontend §549/753). Masqué si vide.
+  const [fieldNotes, setFieldNotes] = useState<FieldNote[]>([]);
+
+  // API impérative de la carte (fly-to à l'ouverture, tracé d'itinéraire).
+  const mapApiRef = useRef<MapNavigatorApi | null>(null);
   // Capture departure time at mount so /visits/confirm has a meaningful pair.
   const departAtRef = useRef<string>(new Date().toISOString());
 
@@ -114,6 +108,11 @@ export function AddressView({ code }: AddressViewProps) {
       if (address.myRating != null) {
         setStars(address.myRating);
       }
+      // Informations terrain publiées — best-effort, ne bloque jamais la fiche.
+      api
+        .listFieldNotes(code)
+        .then((res) => setFieldNotes(res.items))
+        .catch(() => setFieldNotes([]));
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 404) {
@@ -150,7 +149,9 @@ export function AddressView({ code }: AddressViewProps) {
   }, []);
 
   const handleStartNavigation = useCallback(() => {
-    mapRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setNavigationStarted(true);
+    // Trace l'itinéraire animé sur la carte signature (best-effort géoloc).
+    void mapApiRef.current?.startNavigation();
     // Marque le début effectif du trajet côté serveur (CDC Backend §9
     // POST /visits/start) — best-effort, n'interrompt jamais l'utilisateur.
     void api
@@ -191,42 +192,28 @@ export function AddressView({ code }: AddressViewProps) {
     }
   }, [code, toast]);
 
+  // Enregistre la note (upsert) et met à jour la moyenne affichée de façon
+  // optimiste. Lève en cas d'échec — le dialogue de retour gère le retour UX
+  // (transition d'étape en cas de succès, toast d'erreur sinon).
   const handleRate = useCallback(
-    async (score: 1 | 2 | 3 | 4 | 5) => {
-      if (voting) return;
-      setVoting(true);
-      try {
-        const res = await api.upsertRating(code, score);
-        setStars(score);
-        // Mise à jour optimiste de la moyenne pour rendre l'effet visible
-        // immédiatement (sinon il faudrait recharger l'adresse).
-        setState((prev) =>
-          prev.kind === 'ok'
-            ? {
-                kind: 'ok',
-                address: {
-                  ...prev.address,
-                  averageRating: res.newAverage,
-                  ratingCount: res.ratingCount,
-                  myRating: score,
-                },
-              }
-            : prev,
-        );
-        toast.show({
-          message: 'Merci pour votre évaluation !',
-          variant: 'success',
-        });
-      } catch {
-        toast.show({
-          message: "Impossible d'enregistrer votre évaluation. Réessayez.",
-          variant: 'error',
-        });
-      } finally {
-        setVoting(false);
-      }
+    async (score: number) => {
+      const res = await api.upsertRating(code, score as 1 | 2 | 3 | 4 | 5);
+      setStars(score);
+      setState((prev) =>
+        prev.kind === 'ok'
+          ? {
+              kind: 'ok',
+              address: {
+                ...prev.address,
+                averageRating: res.newAverage,
+                ratingCount: res.ratingCount,
+                myRating: score,
+              },
+            }
+          : prev,
+      );
     },
-    [code, voting, toast],
+    [code],
   );
 
   // Open the auth gate dialog for the given action, or run `onAuthed` if the
@@ -248,12 +235,10 @@ export function AddressView({ code }: AddressViewProps) {
 
   const handleArrival = useCallback(async () => {
     setArrived(true);
-    // Always record the visit (anonymous arrivals still feed the ETA model
-    // backend-side), but only surface the contribution form when the visitor
-    // is authenticated — the cas d'usage gates contribution behind login.
-    if (isAuthenticated) {
-      setContributionOpen(true);
-    }
+    // Présente EXPLICITEMENT le dialogue de retour (note → contribution) au
+    // moment de l'arrivée — pour tout le monde : un anonyme y est invité à se
+    // connecter (CDC §327). L'arrivée elle-même est anonyme.
+    setFeedbackOpen(true);
     try {
       await api.confirmArrival({
         addressCode: code,
@@ -264,7 +249,7 @@ export function AddressView({ code }: AddressViewProps) {
       // Best-effort: arrival confirmation is not user-blocking. The toast on
       // the next action will still surface real failures.
     }
-  }, [code, isAuthenticated]);
+  }, [code]);
 
   const handleReportSubmit = useCallback(async () => {
     const trimmed = reportMessage.trim();
@@ -291,39 +276,14 @@ export function AddressView({ code }: AddressViewProps) {
     }
   }, [code, reportMessage, toast]);
 
-  const handleContributionSubmit = useCallback(
-    async (event: React.FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      if (!direction && !entrySide) {
-        toast.show({
-          message: 'Choisissez au moins un champ avant de partager.',
-          variant: 'info',
-        });
-        return;
-      }
-      setContributing(true);
-      try {
-        await api.submitContribution(code, {
-          circulationDirection: direction || undefined,
-          entrySide: entrySide || undefined,
-        });
-        toast.show({
-          message: 'Merci pour votre contribution !',
-          variant: 'success',
-        });
-        setContributionOpen(false);
-        setDirection('');
-        setEntrySide('');
-      } catch {
-        toast.show({
-          message: "Impossible d'envoyer votre contribution. Réessayez.",
-          variant: 'error',
-        });
-      } finally {
-        setContributing(false);
-      }
+  // Envoie une observation terrain (texte libre). La note part en modération :
+  // elle n'apparaît publiquement qu'une fois approuvée — on ne l'ajoute donc
+  // pas à la liste affichée. Lève en cas d'échec (le dialogue gère le retour).
+  const submitNote = useCallback(
+    async (message: string) => {
+      await api.createFieldNote(code, { message });
     },
-    [code, direction, entrySide, toast],
+    [code],
   );
 
   const inactiveCopy = useMemo(() => {
@@ -341,14 +301,18 @@ export function AddressView({ code }: AddressViewProps) {
 
   if (state.kind === 'loading') {
     return (
-      <main className="min-h-screen flex flex-col">
-        <Skeleton width="100%" height={280} className="!rounded-none" />
-        <div className="mx-auto w-full max-w-3xl px-4 sm:px-6 py-6 flex flex-col gap-4">
-          <Skeleton width={160} height={32} />
-          <Skeleton width={200} height={20} />
-          <Skeleton width="100%" height={18} count={4} />
+      <main className="relative min-h-screen bg-bg lg:h-screen lg:overflow-hidden">
+        <div className="fixed inset-x-0 top-0 h-[50vh] z-0 lg:absolute lg:inset-y-0 lg:left-[26rem] lg:right-0 lg:h-auto">
+          <div className="w-full h-full skeleton-shimmer" />
         </div>
-        <Skeleton width="100%" height={320} className="!rounded-none" />
+        <div className="relative z-10 mt-[42vh] lg:mt-0 lg:fixed lg:inset-y-0 lg:left-0 lg:w-[26rem]">
+          <div className="bg-surface rounded-t-[var(--radius-2xl)] lg:rounded-none border-t lg:border-t-0 lg:border-r border-border min-h-[58vh] lg:min-h-screen p-5 sm:p-7 flex flex-col gap-6">
+            <Skeleton width={180} height={40} />
+            <Skeleton width="100%" height={56} className="!rounded-[var(--radius-lg)]" />
+            <Skeleton width={140} height={24} />
+            <Skeleton width="100%" height={18} count={4} />
+          </div>
+        </div>
       </main>
     );
   }
@@ -360,7 +324,7 @@ export function AddressView({ code }: AddressViewProps) {
         body="Vérifiez le code reçu sur WhatsApp ou auprès de votre interlocuteur."
         actionHref="/"
         actionLabel="Retour à l’accueil"
-        icon={<AlertTriangle className="h-6 w-6 text-text-muted" aria-hidden="true" />}
+        icon={<AlertTriangle className="h-7 w-7 text-text-muted" aria-hidden="true" />}
       />
     );
   }
@@ -372,7 +336,7 @@ export function AddressView({ code }: AddressViewProps) {
         body={inactiveCopy ?? "Cette adresse n'est plus active."}
         actionHref="/"
         actionLabel="Retour à l’accueil"
-        icon={<AlertTriangle className="h-6 w-6 text-accent" aria-hidden="true" />}
+        icon={<AlertTriangle className="h-7 w-7 text-accent" aria-hidden="true" />}
       />
     );
   }
@@ -385,298 +349,246 @@ export function AddressView({ code }: AddressViewProps) {
         onAction={() => void loadAddress()}
         actionLabel="Réessayer"
         actionIcon={<RotateCw className="h-4 w-4" aria-hidden="true" />}
-        icon={<WifiOff className="h-6 w-6 text-danger" aria-hidden="true" />}
+        icon={<WifiOff className="h-7 w-7 text-danger" aria-hidden="true" />}
       />
     );
   }
 
   const { address } = state;
+
+  const quickActions = [
+    { icon: QrCode, label: 'QR Code', onClick: () => setQrOpen(true) },
+    { icon: Share2, label: 'Partager', onClick: () => void handleShare() },
+    { icon: Copy, label: 'Copier le code', onClick: () => void handleCopyCode() },
+  ];
+
+  const steps = address.instructions.steps;
+
   return (
-    <main className="min-h-screen flex flex-col bg-bg md:pt-20">
-      {/* Navbar partagée — le code, le partage et le retour à l'accueil sont
-         déjà présents dans le contenu (carte d'info + footer), l'ancienne
-         app bar bespoke était donc redondante. */}
-      <Navbar />
+    <main className="relative min-h-screen bg-bg lg:h-screen lg:overflow-hidden">
+      {/* ── CARTE-CANVAS (signature) — hero plein sur mobile, panneau droit
+          pleine hauteur sur desktop. fly-to vers le pin de marque à
+          l'ouverture, tracé d'itinéraire au lancement de la navigation. ── */}
+      <div className="fixed inset-x-0 top-0 h-[50vh] z-0 lg:absolute lg:inset-y-0 lg:left-[26rem] lg:right-0 lg:h-auto">
+        <MapNavigator
+          destination={{ lat: address.gps.lat, lng: address.gps.lng }}
+          onArrival={handleArrival}
+          className="w-full h-full"
+          onReady={(mapApi) => {
+            mapApiRef.current = mapApi;
+            // Fly-to signature peu après le montage de la carte.
+            window.setTimeout(() => mapApi.flyToDestination(), 350);
+          }}
+        />
 
-      {isOffline ? (
+        {/* Chrome flottant minimal — retour accueil + logo (langage `/carte`). */}
         <div
-          role="status"
-          className="w-full bg-surface-muted text-text-primary text-xs px-4 py-2 text-center border-b border-dashed border-border"
+          className="absolute inset-x-0 top-0 z-[400] flex items-center justify-between gap-2 p-3 pointer-events-none"
+          style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top))' }}
         >
-          Mode hors-connexion — données issues du cache.
+          <Link
+            href="/"
+            aria-label="Retour à l’accueil"
+            className="pointer-events-auto inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface text-text-primary shadow-md border border-border tap-press hover:text-primary transition-colors lg:hidden"
+          >
+            <Home className="h-5 w-5" aria-hidden="true" />
+          </Link>
+          <Link
+            href="/"
+            aria-label="Accueil AdresseBJ"
+            className="pointer-events-auto hidden lg:inline-flex items-center rounded-full bg-surface/95 px-3 py-2 shadow-md border border-border backdrop-blur-sm"
+          >
+            <Logo iconOnly className="h-6 w-6" />
+          </Link>
         </div>
-      ) : null}
+      </div>
 
-      <div className="mx-auto w-full max-w-3xl flex flex-col gap-3 pb-12">
-        {/* Photo — full bleed with status pill overlay + soft dark gradient
-           en bas pour donner du contraste à la pill et préparer l'œil au
-           contenu de la carte qui suit. */}
-        <div className="relative w-full aspect-video bg-surface-muted overflow-hidden">
-          <Image
-            src={address.photoUrl}
-            alt={`Portail de l’adresse ${address.code}`}
-            fill
-            priority
-            sizes="100vw"
-            className="object-cover animate-fade-up"
-            unoptimized
-          />
-          <div
-            aria-hidden="true"
-            className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/30 to-transparent pointer-events-none"
-          />
-          <span className="absolute top-4 right-4 px-3 py-1 rounded-full bg-[#DCFCE7] text-[#166534] text-xs font-medium shadow-sm backdrop-blur-sm animate-fade-up stagger-1">
-            Validée
-          </span>
-        </div>
-
-        {/* Info card — code, zone, reliability, quick actions */}
-        <section className="mx-4 card rounded-xl p-4">
-          <h2 className="font-display font-bold text-2xl text-primary mb-1">
-            {address.code}
-          </h2>
-          <p className="text-sm text-text-muted flex items-center gap-1 mb-3">
-            <MapPin className="h-4 w-4" aria-hidden="true" />
-            {address.quartier.name}
-          </p>
-          <div className="mb-4">
-            <CategoryBadge category={address.category} size="sm" />
+      {/* ── SURFACE PAPIER SOLIDE — arbre de contenu unique (feuille mobile /
+          panneau gauche desktop). Pas de glassmorphisme. ── */}
+      <div className="relative z-10 mt-[42vh] lg:mt-0 lg:fixed lg:inset-y-0 lg:left-0 lg:w-[26rem] lg:overflow-y-auto">
+        <div className="bg-surface rounded-t-[var(--radius-2xl)] lg:rounded-none border-t lg:border-t-0 lg:border-r border-border shadow-[0_-12px_40px_-12px_rgba(26,20,12,0.18)] lg:shadow-lg min-h-[58vh] lg:min-h-full">
+          {/* Poignée décorative (affordance « feuille ») — mobile seulement. */}
+          <div className="flex justify-center pt-3 pb-1 lg:hidden" aria-hidden="true">
+            <div className="h-1.5 w-10 rounded-full bg-border-strong" />
           </div>
-          <div className="flex items-center gap-2 mb-6">
-            <ReliabilityBadge
-              averageRating={address.averageRating}
-              ratingCount={address.ratingCount}
-              size="sm"
-            />
-            <span className="text-sm text-text-muted">
-              {address.visitCount} visite{address.visitCount > 1 ? 's' : ''}
-            </span>
-          </div>
-          <div className="flex justify-around border-t border-border pt-4">
-            {[
-              { icon: QrCode, label: 'QR Code', onClick: () => setQrOpen(true) },
-              { icon: Share2, label: 'Partager', onClick: () => void handleShare() },
-              { icon: Copy, label: 'Copier', onClick: () => void handleCopyCode() },
-            ].map(({ icon: Icon, label, onClick }) => (
-              <button
-                key={label}
-                type="button"
-                onClick={onClick}
-                className="flex flex-col items-center gap-1.5 p-2 rounded-lg hover:bg-primary-surface tap-press transition-colors cursor-pointer group"
-              >
-                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-surface text-primary ring-1 ring-primary/15 transition-transform duration-200 group-hover:scale-110 group-active:scale-95">
-                  <Icon className="h-5 w-5" aria-hidden="true" />
-                </span>
-                <span className="text-xs text-text-muted font-medium">{label}</span>
-              </button>
-            ))}
-          </div>
-        </section>
 
-        {/* Instructions card */}
-        <section
-          aria-labelledby="instructions-title"
-          className="mx-4 card rounded-xl p-4"
-        >
-          <h3
-            id="instructions-title"
-            className="font-display font-semibold text-h3 text-text-primary mb-4"
-          >
-            Instructions d’accès
-          </h3>
-          <StepsList steps={address.instructions.steps} />
-        </section>
-
-        {/* Map card + navigation CTA */}
-        <section ref={mapRef} className="mx-4 card rounded-xl p-4">
-          <div className="rounded-lg overflow-hidden mb-4">
-            <MapNavigator
-              destination={{ lat: address.gps.lat, lng: address.gps.lng }}
-              onArrival={handleArrival}
-            />
-          </div>
-          <Button
-            variant="primary"
-            size="lg"
-            onClick={handleStartNavigation}
-            leadingIcon={<NavigationIcon className="h-5 w-5" aria-hidden="true" />}
-            fullWidth
-            className="rounded-xl"
-          >
-            Lancer la navigation
-          </Button>
-          <Button
-            variant="secondary"
-            size="lg"
-            onClick={handleArrival}
-            disabled={arrived}
-            fullWidth
-            className="rounded-xl mt-3"
-          >
-            {arrived ? 'Arrivée enregistrée' : "J'y suis"}
-          </Button>
-        </section>
-
-        {/* Rating card — 5 stars (StarRating component). Une nouvelle note
-           remplace l'ancienne via PUT /addresses/:code/rating (upsert). Si
-           la note est ≤ 2, on propose discrètement le signalement (CDC §8). */}
-        <section aria-labelledby="rating-title" className="mx-4 card rounded-xl p-4">
-          <h3
-            id="rating-title"
-            className="text-sm font-semibold text-text-primary mb-4 text-center"
-          >
-            {stars > 0
-              ? `Votre note actuelle : ${stars}/5. Modifiable à tout moment.`
-              : isAuthenticated
-                ? 'Ces instructions étaient-elles utiles ?'
-                : 'Connectez-vous pour évaluer cette adresse.'}
-          </h3>
-          <StarRating
-            currentScore={stars > 0 ? stars : null}
-            disabled={voting || !isAuthenticated}
-            disabledHint={
-              !isAuthenticated ? 'Connectez-vous pour évaluer' : undefined
-            }
-            onRate={(n) => {
-              if (!isAuthenticated) {
-                guardOrOpen('contribute', 'évaluer cette adresse', () => {});
-                return;
-              }
-              void handleRate(n as 1 | 2 | 3 | 4 | 5);
-            }}
-          />
-          {stars > 0 && stars <= 2 ? (
-            <p className="mt-4 text-center text-sm text-text-muted animate-fade-up">
-              Souhaitez-vous{' '}
-              <button
-                type="button"
-                onClick={() => setReportOpen(true)}
-                className="font-medium text-danger underline underline-offset-2 cursor-pointer"
-              >
-                signaler un problème
-              </button>{' '}
-              sur cette adresse ?
-            </p>
+          {isOffline ? (
+            <div
+              role="status"
+              className="mx-4 mt-2 rounded-xl bg-surface-muted text-text-primary text-xs px-3 py-2 text-center border border-dashed border-border-strong"
+            >
+              Mode hors-connexion. Données issues du cache.
+            </div>
           ) : null}
-        </section>
 
-        {/* Action étendue — Signaler une adresse (post_consultation_adresse).
-           La précision terrain reste l'unique mécanisme contributif visiteur :
-           elle apparaît automatiquement après « J'y suis » (post_arrivée). */}
-        <div className="mt-4 flex flex-col items-center gap-2">
-          <button
-            type="button"
-            onClick={() =>
-              guardOrOpen('report', 'Signaler un problème', () =>
-                setReportOpen(true),
-              )
-            }
-            className="flex items-center gap-2 text-danger text-sm hover:underline underline-offset-4 cursor-pointer"
-          >
-            <Flag className="h-4 w-4" aria-hidden="true" />
-            Signaler un problème
-          </button>
-        </div>
+          <div className="px-5 sm:px-7 pt-5 pb-10 flex flex-col gap-8">
+            {/* ── PLAQUE IDENTITÉ ── */}
+            <header className="animate-fade-up flex flex-col gap-4">
+              <div className="flex items-start justify-between gap-3">
+                <CategoryMedallion category={address.category} />
+                {/* Actions rapides — QR / Partager / Copier. */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {quickActions.map(({ icon: Icon, label, onClick }) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={onClick}
+                      aria-label={label}
+                      title={label}
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-surface-muted border border-border text-text-primary hover:bg-primary hover:text-text-inverse hover:border-primary tap-press transition-colors cursor-pointer"
+                    >
+                      <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-        {contributionOpen ? (
-          <section
-            aria-labelledby="contribution-title"
-            className={classNames(
-              'mx-4 rounded-xl bg-surface p-4',
-              'border border-border shadow-sm',
-              'flex flex-col gap-4',
-            )}
-          >
-            <header className="flex items-start justify-between gap-3">
               <div>
-                <h2
-                  id="contribution-title"
-                  className="font-display font-bold text-h3 text-text-primary"
-                >
-                  Aidez les prochains visiteurs
-                </h2>
-                <p className="text-sm text-text-muted mt-1">
-                  Partage 100% optionnel. Vos précisions seront validées par un
-                  administrateur avant d’être publiées.
+                <h1 className="code-type text-4xl sm:text-5xl font-black text-text-primary leading-none">
+                  {address.code}
+                </h1>
+                <p className="mt-2.5 flex items-center gap-1.5 text-sm font-medium text-text-muted">
+                  <MapPin className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                  <span className="truncate">{address.quartier.name}</span>
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setContributionOpen(false)}
-                className="text-xs font-semibold text-text-muted hover:text-text-primary"
-                aria-label="Fermer le formulaire de contribution"
-              >
-                Fermer
-              </button>
+
+              {/* Bloc confiance éditorial — note + étoiles or + visites. */}
+              <RatingSummary
+                averageRating={address.averageRating}
+                ratingCount={address.ratingCount}
+                visitCount={address.visitCount}
+                className="animate-fade-up stagger-1"
+              />
             </header>
 
-            <form onSubmit={handleContributionSubmit} className="flex flex-col gap-3">
-              <label className="flex flex-col gap-1 text-sm">
-                <span className="font-medium text-text-primary">
-                  Sens de circulation
-                </span>
-                <select
-                  value={direction}
-                  onChange={(e) => setDirection(e.target.value)}
-                  className="h-11 rounded-md border border-border bg-surface px-3 text-text-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-                >
-                  {DIRECTION_OPTIONS.map((opt) => (
-                    <option key={opt.value || 'none-dir'} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="flex flex-col gap-1 text-sm">
-                <span className="font-medium text-text-primary">Côté d’entrée</span>
-                <select
-                  value={entrySide}
-                  onChange={(e) => setEntrySide(e.target.value)}
-                  className="h-11 rounded-md border border-border bg-surface px-3 text-text-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-                >
-                  {ENTRY_SIDE_OPTIONS.map((opt) => (
-                    <option key={opt.value || 'none-side'} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <div className="flex flex-col sm:flex-row gap-3 pt-2">
+            {/* ── ACTIONS CLÉS ──
+                Au départ : seul « Itinéraire ». « J'y suis » n'apparaît
+                qu'une fois la navigation lancée (rien à confirmer avant). */}
+            <div className="animate-fade-up stagger-1 flex flex-col gap-3">
+              <Button
+                variant="primary"
+                size="lg"
+                onClick={handleStartNavigation}
+                aria-label="Lancer la navigation"
+                leadingIcon={<NavigationIcon className="h-5 w-5" aria-hidden="true" />}
+                className="w-full rounded-[var(--radius-lg)] font-bold shadow-sm"
+              >
+                {navigationStarted ? 'Relancer l’itinéraire' : 'Itinéraire'}
+              </Button>
+              {navigationStarted ? (
                 <Button
-                  type="submit"
-                  variant="primary"
-                  size="md"
-                  loading={contributing}
-                  fullWidth
+                  variant="secondary"
+                  size="lg"
+                  onClick={handleArrival}
+                  disabled={arrived}
+                  className="w-full rounded-[var(--radius-lg)] font-bold border-border-strong bg-surface-muted hover:bg-border"
                 >
-                  Partager ma contribution
+                  {arrived ? 'Arrivée confirmée' : 'J’y suis'}
                 </Button>
-                <Button
+              ) : null}
+            </div>
+
+            {/* ── PHOTO DU PORTAIL — ancre de reconnaissance ── */}
+            <figure className="animate-fade-up stagger-2 relative w-full aspect-[4/3] sm:aspect-[16/10] overflow-hidden rounded-[var(--radius-lg)] border border-border bg-surface-muted">
+              <Image
+                src={address.photoUrl}
+                alt={`Portail de l’adresse ${address.code}`}
+                fill
+                priority
+                sizes="(min-width: 1024px) 26rem, 100vw"
+                className="object-cover"
+                unoptimized
+              />
+            </figure>
+
+            {/* ── ITINÉRAIRE — liste d'instructions ── */}
+            <section aria-labelledby="instructions-title" className="animate-fade-up stagger-3">
+              <h2
+                id="instructions-title"
+                className="font-display font-bold text-2xl text-text-primary mb-6"
+              >
+                Comment s&apos;y rendre
+              </h2>
+              <StepsList steps={steps} />
+            </section>
+
+            {/* ── INFORMATIONS TERRAIN (contributions validées, lecture seule) ──
+                Texte libre publié après modération (CDC Frontend §549/753).
+                Toute la section disparaît s'il n'y en a aucune. */}
+            {fieldNotes.length > 0 ? (
+              <section
+                aria-labelledby="terrain-title"
+                className="animate-fade-up"
+              >
+                <h2
+                  id="terrain-title"
+                  className="font-display font-bold text-2xl text-text-primary mb-2"
+                >
+                  Informations terrain
+                </h2>
+                <p className="text-sm text-text-muted mb-5">
+                  Les conseils de personnes qui sont déjà venues jusqu&apos;ici.
+                </p>
+                <FieldNotesList notes={fieldNotes} />
+              </section>
+            ) : null}
+
+            {/* ── ACTIONS SECONDAIRES ──
+                Le retour (note + contribution) est présenté dans un dialogue à
+                l'arrivée. Ici on garde un accès permanent : « Donner mon avis »
+                pour rouvrir le dialogue après arrivée, et « Signaler un
+                problème » toujours accessible (CDC §327). */}
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+              {arrived ? (
+                <button
                   type="button"
-                  variant="ghost"
-                  size="md"
-                  onClick={() => setContributionOpen(false)}
-                  fullWidth
+                  onClick={() => setFeedbackOpen(true)}
+                  className="flex items-center gap-2 text-primary text-sm font-semibold hover:text-primary-hover transition-colors cursor-pointer"
                 >
-                  Pas maintenant
-                </Button>
-              </div>
-            </form>
-          </section>
-        ) : null}
+                  <Star className="h-4 w-4" aria-hidden="true" />
+                  Donner mon avis
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() =>
+                  guardOrOpen('report', 'signaler un problème', () =>
+                    setReportOpen(true),
+                  )
+                }
+                className="flex items-center gap-2 text-text-muted text-sm font-medium hover:text-text-primary transition-colors cursor-pointer"
+              >
+                <Flag className="h-4 w-4" aria-hidden="true" />
+                Signaler un problème
+              </button>
+            </div>
 
-        <footer className="mx-4 pt-4 border-t border-dashed border-border">
-          <button
-            type="button"
-            onClick={() => router.push('/')}
-            className="text-sm text-text-muted hover:text-text-primary inline-flex items-center gap-1 cursor-pointer"
-          >
-            <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Retour à l’accueil
-          </button>
-        </footer>
+            <footer className="pt-6 border-t border-dashed border-border flex justify-center lg:justify-start">
+              <Link
+                href="/carte"
+                className="text-sm font-semibold text-text-muted hover:text-text-primary inline-flex items-center gap-2 cursor-pointer tap-press px-4 py-2 rounded-full hover:bg-surface-muted"
+              >
+                <MapPin className="h-4 w-4" aria-hidden="true" /> Explorer la carte
+              </Link>
+            </footer>
+          </div>
+        </div>
       </div>
+
+      {/* Dialogue de retour présenté explicitement à l'arrivée. */}
+      <FeedbackPrompt
+        isOpen={feedbackOpen}
+        onClose={() => setFeedbackOpen(false)}
+        isAuthenticated={isAuthenticated}
+        currentRating={stars > 0 ? stars : null}
+        onRate={handleRate}
+        onSubmitNote={submitNote}
+        onRequireAuth={() => {
+          setFeedbackOpen(false);
+          setAuthGate({ action: 'contribute', label: 'noter cette adresse' });
+        }}
+      />
 
       <Modal isOpen={qrOpen} onClose={() => setQrOpen(false)} title={`QR Code ${address.code}`}>
         <QRCodeDisplay
@@ -737,11 +649,7 @@ export function AddressView({ code }: AddressViewProps) {
         title="Connexion requise"
         footer={
           <>
-            <Button
-              variant="ghost"
-              size="md"
-              onClick={() => setAuthGate(null)}
-            >
+            <Button variant="ghost" size="md" onClick={() => setAuthGate(null)}>
               Plus tard
             </Button>
             <Button
@@ -788,20 +696,24 @@ function StateCard({
   onAction,
 }: StateCardProps) {
   return (
-    <main className="min-h-screen flex items-center justify-center px-4 py-12">
+    <main className="min-h-screen flex items-center justify-center px-4 py-12 bg-bg motif-paper">
       <section
         className={classNames(
           'w-full max-w-md bg-surface text-text-primary',
-          'rounded-lg border border-border shadow-md p-6 sm:p-8',
-          'flex flex-col gap-4',
+          'rounded-[var(--radius-xl)] border border-border shadow-lg p-7 sm:p-9',
+          'flex flex-col gap-4 items-start',
         )}
         role="alert"
       >
-        {icon ? <div>{icon}</div> : null}
+        {icon ? (
+          <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-surface-muted border border-border">
+            {icon}
+          </div>
+        ) : null}
         <h1 className="font-display font-bold text-h2">{title}</h1>
         <p className="text-body text-text-muted">{body}</p>
         {actionHref ? (
-          <Link href={actionHref} className="self-start">
+          <Link href={actionHref} className="self-start mt-1">
             <Button variant="primary" size="md">
               {actionLabel}
             </Button>
@@ -812,7 +724,7 @@ function StateCard({
             variant="primary"
             size="md"
             onClick={onAction}
-            className="self-start"
+            className="self-start mt-1"
             leadingIcon={actionIcon}
           >
             {actionLabel}

@@ -39,3 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Docs
+AdresseBJ_CdC_Backend.md
+AdresseBJ_CdC_Frontend.md
+Cahier_De_Charge_Adresse_BJ_v5.md

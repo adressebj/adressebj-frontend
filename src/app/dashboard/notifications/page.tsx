@@ -54,7 +54,7 @@ export default function NotificationsPage() {
           Alertes
         </h1>
         <p className="text-sm text-text-muted">
-          Validations, signalements et mises à jour de vos adresses.
+          Tout ce qui se passe sur vos adresses, réuni au même endroit.
         </p>
       </header>
 

@@ -6,21 +6,23 @@ import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import {
+  AlertTriangle,
   ArrowLeft,
-  CheckCircle2,
-  Compass,
+  Copy,
   Edit3,
   Eye,
   EyeOff,
   Globe,
+  MapPin,
+  Pencil,
   Printer,
   RotateCw,
   Share2,
   Trash2,
 } from 'lucide-react';
-import { CategoryBadge } from '@/components/address/CategoryBadge';
+import { CategoryMedallion } from '@/components/address/CategoryMedallion';
 import { FieldNotesList } from '@/components/address/FieldNotesList';
-import { ReliabilityBadge } from '@/components/address/ReliabilityBadge';
+import { RatingSummary } from '@/components/address/RatingSummary';
 import { RevisionHistory } from '@/components/address/RevisionHistory';
 import { StepsList } from '@/components/address/StepsList';
 import { Button } from '@/components/ui/Button';
@@ -29,17 +31,16 @@ import { Modal } from '@/components/ui/Modal';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/Toast';
 import { ApiError, api } from '@/lib/api';
+import { classNames } from '@/lib/utils';
 import type { AddressRevision, FieldNote, PublicAddress } from '@/types/api';
 
-// Non-interactive visualisation map — owner just needs to see the pin, not
-// navigate. ssr:false because Leaflet touches `window` at import time.
+// Carte de visualisation non interactive — le propriétaire veut juste voir le
+// pin de marque, pas naviguer. ssr:false : Leaflet touche `window` à l'import.
 const MiniMap = dynamic(
   () => import('@/components/map/MapNavigator').then((m) => m.MapNavigator),
   {
     ssr: false,
-    loading: () => (
-      <div className="w-full h-[220px] bg-surface-muted animate-pulse rounded-md" />
-    ),
+    loading: () => <div className="w-full h-full bg-surface-muted animate-pulse" />,
   },
 );
 
@@ -94,6 +95,19 @@ export function OwnerAddressView({ code: rawCode }: OwnerAddressViewProps) {
       .catch(() => setNotes([]));
   }, [code]);
 
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleCopyCode = useCallback(async () => {
+    try {
+      await navigator.clipboard?.writeText?.(code);
+      toast.show({ message: 'Code copié !', variant: 'success' });
+    } catch {
+      toast.show({ message: 'Impossible de copier le code.', variant: 'error' });
+    }
+  }, [code, toast]);
+
   const handleToggleDiscovery = useCallback(async () => {
     if (discoverable == null || togglingDiscovery) return;
     const next = !discoverable;
@@ -109,17 +123,13 @@ export function OwnerAddressView({ code: rawCode }: OwnerAddressViewProps) {
       });
     } catch {
       toast.show({
-        message: "Impossible de mettre à jour le réglage. Réessayez.",
+        message: 'Impossible de mettre à jour le réglage. Réessayez.',
         variant: 'error',
       });
     } finally {
       setTogglingDiscovery(false);
     }
   }, [code, discoverable, togglingDiscovery, toast]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   const handleDeactivate = useCallback(async () => {
     if (confirmCode.trim().toUpperCase() !== code) return;
@@ -138,57 +148,48 @@ export function OwnerAddressView({ code: rawCode }: OwnerAddressViewProps) {
     }
   }, [code, confirmCode, router, toast]);
 
+  // ── États ────────────────────────────────────────────────────────────────
+
   if (state.kind === 'loading') {
     return (
-      <section className="mx-auto w-full max-w-3xl px-4 sm:px-6 py-6 flex flex-col gap-5">
-        <Skeleton width="100%" height={240} />
-        <Skeleton width={200} height={24} />
-        <Skeleton width="100%" height={16} count={3} />
-      </section>
+      <main className="relative min-h-screen bg-bg lg:h-screen lg:overflow-hidden">
+        <div className="fixed inset-x-0 top-0 h-[50vh] z-0 lg:absolute lg:inset-y-0 lg:left-[26rem] lg:right-0 lg:h-auto">
+          <div className="w-full h-full skeleton-shimmer" />
+        </div>
+        <div className="relative z-10 mt-[42vh] lg:mt-0 lg:fixed lg:inset-y-0 lg:left-0 lg:w-[26rem]">
+          <div className="bg-surface rounded-t-[var(--radius-2xl)] lg:rounded-none border-t lg:border-t-0 lg:border-r border-border min-h-[58vh] lg:min-h-screen p-5 sm:p-7 flex flex-col gap-6">
+            <Skeleton width={180} height={40} />
+            <Skeleton width="100%" height={56} className="!rounded-[var(--radius-lg)]" />
+            <Skeleton width={140} height={24} />
+            <Skeleton width="100%" height={18} count={4} />
+          </div>
+        </div>
+      </main>
     );
   }
 
   if (state.kind === 'not_found') {
     return (
-      <section
-        role="alert"
-        className="mx-auto w-full max-w-md px-4 sm:px-6 py-12 flex flex-col gap-4"
-      >
-        <h1 className="font-display font-bold text-h2">
-          Cette adresse n'est plus accessible.
-        </h1>
-        <p className="text-text-muted">
-          Elle a pu être désactivée ou supprimée. Revenez à la liste pour en
-          consulter d'autres.
-        </p>
-        <Link href="/dashboard" className="self-start">
-          <Button variant="primary" size="md">
-            Retour au tableau de bord
-          </Button>
-        </Link>
-      </section>
+      <OwnerStateCard
+        title="Cette adresse n'est plus accessible."
+        body="Elle a pu être désactivée ou supprimée. Revenez à vos adresses pour en consulter d'autres."
+        icon={<AlertTriangle className="h-7 w-7 text-text-muted" aria-hidden="true" />}
+        actionHref="/dashboard"
+        actionLabel="Retour à mes adresses"
+      />
     );
   }
 
   if (state.kind === 'error') {
     return (
-      <section
-        role="alert"
-        className="mx-auto w-full max-w-md px-4 sm:px-6 py-12 flex flex-col gap-4"
-      >
-        <h1 className="font-display font-bold text-h2">
-          Impossible de charger cette adresse.
-        </h1>
-        <Button
-          variant="primary"
-          size="md"
-          onClick={load}
-          leadingIcon={<RotateCw className="h-4 w-4" aria-hidden="true" />}
-          className="self-start"
-        >
-          Réessayer
-        </Button>
-      </section>
+      <OwnerStateCard
+        title="Impossible de charger cette adresse."
+        body="Une erreur réseau s'est produite. Vérifiez votre connexion."
+        icon={<RotateCw className="h-7 w-7 text-danger" aria-hidden="true" />}
+        onAction={load}
+        actionLabel="Réessayer"
+        actionIcon={<RotateCw className="h-4 w-4" aria-hidden="true" />}
+      />
     );
   }
 
@@ -200,224 +201,279 @@ export function OwnerAddressView({ code: rawCode }: OwnerAddressViewProps) {
   });
   const canConfirm = confirmCode.trim().toUpperCase() === code && !deactivating;
 
+  const quickActions = [
+    {
+      icon: Eye,
+      label: 'Aperçu visiteur',
+      href: `/a/${code}`,
+    },
+    {
+      icon: Copy,
+      label: 'Copier le code',
+      onClick: () => void handleCopyCode(),
+    },
+  ];
+
   return (
-    <section className="mx-auto w-full max-w-3xl flex flex-col gap-3 pb-12">
-      {/* Top app bar */}
-      <header className="sticky top-0 z-30 bg-surface flex items-center justify-between px-4 h-16 w-full shadow-sm">
-        <Link
-          href="/dashboard"
-          aria-label="Mes adresses"
-          className="w-10 h-10 flex items-center justify-center rounded-full text-text-muted hover:bg-surface-muted transition-colors"
-        >
-          <ArrowLeft className="h-6 w-6" aria-hidden="true" />
-        </Link>
-        <h1 className="font-display font-semibold text-h3 text-text-primary">
-          Mon adresse
-        </h1>
-        <Link
-          href={`/a/${code}`}
-          aria-label="Voir comme un visiteur"
-          className="w-10 h-10 flex items-center justify-center rounded-full text-text-muted hover:bg-surface-muted transition-colors"
-        >
-          <Eye className="h-5 w-5" aria-hidden="true" />
-        </Link>
-      </header>
+    <main className="relative min-h-screen bg-bg lg:h-screen lg:overflow-hidden">
+      {/* ── CARTE-CANVAS — pin de marque, non interactive (visualisation). ── */}
+      <div className="fixed inset-x-0 top-0 h-[50vh] z-0 lg:absolute lg:inset-y-0 lg:left-[26rem] lg:right-0 lg:h-auto">
+        <MiniMap destination={address.gps} interactive={false} className="w-full h-full" />
 
-      {/* Hero photo with status pill + soft bottom gradient */}
-      <div className="relative w-full aspect-video bg-surface-muted overflow-hidden">
-        <Image
-          src={address.photoUrl}
-          alt={`Portail de l'adresse ${address.code}`}
-          fill
-          sizes="(max-width: 768px) 100vw, 768px"
-          className="object-cover animate-fade-up"
-          unoptimized
-        />
+        {/* Chrome flottant minimal — retour à mes adresses (langage `/a/:code`). */}
         <div
-          aria-hidden="true"
-          className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/30 to-transparent pointer-events-none"
-        />
-        <span className="absolute top-4 left-4 inline-flex items-center gap-1 px-3 py-1 rounded-full bg-[#DCFCE7] text-[#166534] text-xs font-medium shadow-sm backdrop-blur-sm animate-fade-up stagger-1">
-          <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
-          Validée
-        </span>
-      </div>
-
-      {/* Identity card */}
-      <section className="mx-4 card rounded-xl p-4 animate-fade-up stagger-1">
-        <h2 className="font-display font-bold text-[28px] leading-tight text-primary">
-          {address.code}
-        </h2>
-        <p className="text-sm text-text-muted">{address.quartier.name}</p>
-        <div className="mt-2">
-          <CategoryBadge category={address.category} size="sm" />
-        </div>
-        <div className="flex items-center gap-2 mt-2">
-          <ReliabilityBadge
-            averageRating={address.averageRating}
-            ratingCount={address.ratingCount}
-            size="sm"
-          />
-          <span className="text-text-muted text-xs">•</span>
-          <span className="text-xs text-text-muted">
-            {address.visitCount} visite{address.visitCount > 1 ? 's' : ''}
-          </span>
-        </div>
-        <div className="mt-4 pt-4 border-t border-border">
-          <p className="text-xs text-text-muted italic">Créée le {createdAtFmt}</p>
-        </div>
-      </section>
-
-      {/* Access instructions card */}
-      <section aria-labelledby="owner-instructions" className="mx-4 card rounded-xl p-4 animate-fade-up stagger-2">
-        <div className="flex items-center justify-between mb-3">
-          <h3
-            id="owner-instructions"
-            className="font-display font-semibold text-h3 text-text-primary"
-          >
-            Instructions d'accès
-          </h3>
+          className="absolute inset-x-0 top-0 z-[400] flex items-center justify-between gap-2 p-3 pointer-events-none"
+          style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top))' }}
+        >
           <Link
-            href={`/dashboard/address/${code}/edit`}
-            aria-label="Modifier les instructions"
-            className="text-primary p-2 -mr-2 rounded-full hover:bg-surface-muted transition-colors"
+            href="/dashboard"
+            aria-label="Retour à mes adresses"
+            className="pointer-events-auto inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface text-text-primary shadow-md border border-border tap-press hover:text-primary transition-colors"
           >
-            <Edit3 className="h-5 w-5" aria-hidden="true" />
+            <ArrowLeft className="h-5 w-5" aria-hidden="true" />
           </Link>
         </div>
-        <StepsList steps={address.instructions.steps} />
-      </section>
+      </div>
 
-      {/* Historique des révisions — versioning CDC v5 §4 */}
-      {revisions.length > 0 ? (
-        <section
-          aria-labelledby="owner-history"
-          className="mx-4 card rounded-xl p-4 animate-fade-up stagger-3"
-        >
-          <h3
-            id="owner-history"
-            className="font-display font-semibold text-h3 text-text-primary mb-3"
-          >
-            Historique des modifications
-          </h3>
-          <RevisionHistory revisions={revisions} />
-        </section>
-      ) : null}
+      {/* ── PANNEAU PAPIER SOLIDE — arbre de contenu unique. ── */}
+      <div className="relative z-10 mt-[42vh] lg:mt-0 lg:fixed lg:inset-y-0 lg:left-0 lg:w-[26rem] lg:overflow-y-auto">
+        <div className="bg-surface rounded-t-[var(--radius-2xl)] lg:rounded-none border-t lg:border-t-0 lg:border-r border-border shadow-[0_-12px_40px_-12px_rgba(26,20,12,0.18)] lg:shadow-lg min-h-[58vh] lg:min-h-full">
+          {/* Poignée décorative (affordance « feuille ») — mobile seulement. */}
+          <div className="flex justify-center pt-3 pb-1 lg:hidden" aria-hidden="true">
+            <div className="h-1.5 w-10 rounded-full bg-border-strong" />
+          </div>
 
-      {/* Notes terrain — CDC Frontend §11 */}
-      <section
-        aria-labelledby="owner-field-notes"
-        className="mx-4 card rounded-xl p-4 animate-fade-up stagger-3"
-      >
-        <h3
-          id="owner-field-notes"
-          className="font-display font-semibold text-h3 text-text-primary mb-1"
-        >
-          Observations terrain
-        </h3>
-        <p className="text-sm text-text-muted mb-4">
-          Remontées libres laissées par les visiteurs après leur arrivée.
-          Visibles uniquement par vous.
-        </p>
-        <FieldNotesList notes={notes} />
-      </section>
+          <div className="px-5 sm:px-7 pt-5 pb-10 flex flex-col gap-8">
+            {/* ── PLAQUE IDENTITÉ ── */}
+            <header className="animate-fade-up flex flex-col gap-4">
+              <div className="flex items-start justify-between gap-3">
+                <CategoryMedallion category={address.category} />
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {quickActions.map(({ icon: Icon, label, href, onClick }) =>
+                    href ? (
+                      <Link
+                        key={label}
+                        href={href}
+                        aria-label={label}
+                        title={label}
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-surface-muted border border-border text-text-primary hover:bg-primary hover:text-text-inverse hover:border-primary tap-press transition-colors"
+                      >
+                        <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
+                      </Link>
+                    ) : (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={onClick}
+                        aria-label={label}
+                        title={label}
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-surface-muted border border-border text-text-primary hover:bg-primary hover:text-text-inverse hover:border-primary tap-press transition-colors cursor-pointer"
+                      >
+                        <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
+                      </button>
+                    ),
+                  )}
+                </div>
+              </div>
 
-      {/* Map card */}
-      <section aria-labelledby="owner-map" className="mx-4 card rounded-xl p-4 animate-fade-up stagger-3">
-        <h2 id="owner-map" className="sr-only">
-          Position
-        </h2>
-        <div className="rounded-lg overflow-hidden mb-3">
-          <MiniMap destination={address.gps} interactive={false} />
+              <div>
+                <h1 className="code-type text-4xl sm:text-5xl font-black text-text-primary leading-none">
+                  {address.code}
+                </h1>
+                <p className="mt-2.5 flex items-center gap-1.5 text-sm font-medium text-text-muted">
+                  <MapPin className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                  <span className="truncate">{address.quartier.name}</span>
+                </p>
+              </div>
+
+              {/* Statut de visibilité + date de création (méta propriétaire). */}
+              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-xs">
+                {discoverable === false ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-muted text-text-muted px-2.5 py-1 font-semibold border border-border">
+                    <EyeOff className="h-3.5 w-3.5" aria-hidden="true" />
+                    Masquée de la carte
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-success-light/50 text-success px-2.5 py-1 font-semibold">
+                    <Globe className="h-3.5 w-3.5" aria-hidden="true" />
+                    Visible sur la carte
+                  </span>
+                )}
+                <span className="text-text-muted">· Créée le {createdAtFmt}</span>
+              </div>
+
+              {/* Bloc note + visites — la performance de l'adresse. */}
+              <RatingSummary
+                averageRating={address.averageRating}
+                ratingCount={address.ratingCount}
+                visitCount={address.visitCount}
+                className="animate-fade-up stagger-1"
+              />
+            </header>
+
+            {/* ── ACTIONS CLÉS (Partager / Modifier) ── */}
+            <div className="animate-fade-up stagger-1 flex flex-col gap-3">
+              <Link href={`/dashboard/address/${code}/share`} className="block">
+                <Button
+                  variant="primary"
+                  size="lg"
+                  fullWidth
+                  leadingIcon={<Share2 className="h-5 w-5" aria-hidden="true" />}
+                  className="rounded-[var(--radius-lg)] font-bold shadow-sm"
+                >
+                  Partager / QR Code
+                </Button>
+              </Link>
+              <Link href={`/dashboard/address/${code}/edit`} className="block">
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  fullWidth
+                  leadingIcon={<Edit3 className="h-5 w-5" aria-hidden="true" />}
+                  className="rounded-[var(--radius-lg)] font-bold border-border-strong bg-surface-muted hover:bg-border"
+                >
+                  Modifier l&apos;adresse
+                </Button>
+              </Link>
+            </div>
+
+            {/* ── PHOTO DU PORTAIL ── */}
+            <figure className="animate-fade-up stagger-2 relative w-full aspect-[4/3] sm:aspect-[16/10] overflow-hidden rounded-[var(--radius-lg)] border border-border bg-surface-muted">
+              <Image
+                src={address.photoUrl}
+                alt={`Portail de l'adresse ${address.code}`}
+                fill
+                sizes="(min-width: 1024px) 26rem, 100vw"
+                className="object-cover"
+                unoptimized
+              />
+            </figure>
+
+            {/* ── INSTRUCTIONS D'ACCÈS (+ modifier) ── */}
+            <section aria-labelledby="owner-instructions" className="animate-fade-up stagger-3">
+              <div className="flex items-center justify-between gap-3 mb-6">
+                <h2
+                  id="owner-instructions"
+                  className="font-display font-bold text-2xl text-text-primary"
+                >
+                  Comment s&apos;y rendre
+                </h2>
+                <Link
+                  href={`/dashboard/address/${code}/edit`}
+                  aria-label="Modifier les instructions"
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-primary hover:bg-primary-surface transition-colors"
+                >
+                  <Pencil className="h-[18px] w-[18px]" aria-hidden="true" />
+                </Link>
+              </div>
+              <StepsList steps={address.instructions.steps} />
+            </section>
+
+            {/* ── HISTORIQUE DES MODIFICATIONS (versioning CDC v5 §4) ── */}
+            {revisions.length > 0 ? (
+              <section aria-labelledby="owner-history" className="animate-fade-up">
+                <h2
+                  id="owner-history"
+                  className="font-display font-bold text-2xl text-text-primary mb-5"
+                >
+                  Historique des modifications
+                </h2>
+                <RevisionHistory revisions={revisions} />
+              </section>
+            ) : null}
+
+            {/* ── OBSERVATIONS TERRAIN — remontées des visiteurs. ── */}
+            {notes.length > 0 ? (
+              <section aria-labelledby="owner-field-notes" className="animate-fade-up">
+                <h2
+                  id="owner-field-notes"
+                  className="font-display font-bold text-2xl text-text-primary mb-2"
+                >
+                  Retours des visiteurs
+                </h2>
+                <p className="text-sm text-text-muted mb-5">
+                  Ce que les visiteurs ont signalé après être venus chez vous.
+                </p>
+                <FieldNotesList notes={notes} />
+              </section>
+            ) : null}
+
+            {/* ── POSITION GPS ── */}
+            <div className="flex items-center gap-2 text-xs text-text-muted">
+              <MapPin className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+              <span className="code-type">
+                {address.gps.lat.toFixed(5)}°, {address.gps.lng.toFixed(5)}°
+              </span>
+            </div>
+
+            {/* ── RÉGLAGES & GESTION ── */}
+            <section
+              aria-label="Réglages de l'adresse"
+              className="animate-fade-up rounded-[var(--radius-lg)] border border-border bg-surface-muted/60 p-2"
+            >
+              <button
+                type="button"
+                onClick={() =>
+                  window.open(
+                    `/dashboard/address/${code}/print`,
+                    '_blank',
+                    'noopener,noreferrer',
+                  )
+                }
+                className="w-full flex items-center gap-3 rounded-[var(--radius-md)] px-3 py-3 text-left text-sm font-medium text-text-primary hover:bg-surface transition-colors cursor-pointer"
+              >
+                <Printer className="h-5 w-5 shrink-0 text-text-muted" aria-hidden="true" />
+                Imprimer le QR Code
+              </button>
+
+              {discoverable != null ? (
+                <button
+                  type="button"
+                  onClick={() => void handleToggleDiscovery()}
+                  disabled={togglingDiscovery}
+                  className="w-full flex items-center gap-3 rounded-[var(--radius-md)] px-3 py-3 text-left text-sm font-medium text-text-primary hover:bg-surface transition-colors cursor-pointer disabled:opacity-60"
+                >
+                  {discoverable ? (
+                    <EyeOff className="h-5 w-5 shrink-0 text-text-muted" aria-hidden="true" />
+                  ) : (
+                    <Globe className="h-5 w-5 shrink-0 text-text-muted" aria-hidden="true" />
+                  )}
+                  <span className="flex flex-col">
+                    <span>
+                      {discoverable
+                        ? 'Retirer de la carte publique'
+                        : 'Réafficher sur la carte publique'}
+                    </span>
+                    <span className="text-xs font-normal text-text-muted">
+                      {discoverable
+                        ? 'Restera joignable par son code et son lien.'
+                        : 'Repérable par tous depuis la carte.'}
+                    </span>
+                  </span>
+                </button>
+              ) : null}
+
+              <button
+                type="button"
+                onClick={() => setDeactivateOpen(true)}
+                className="w-full flex items-center gap-3 rounded-[var(--radius-md)] px-3 py-3 text-left text-sm font-semibold text-danger hover:bg-danger-light/40 transition-colors cursor-pointer"
+              >
+                <Trash2 className="h-5 w-5 shrink-0" aria-hidden="true" />
+                Désactiver l&apos;adresse
+              </button>
+            </section>
+
+            <footer className="pt-6 border-t border-dashed border-border flex justify-center lg:justify-start">
+              <Link
+                href="/dashboard"
+                className="text-sm font-semibold text-text-muted hover:text-text-primary inline-flex items-center gap-2 cursor-pointer tap-press px-4 py-2 rounded-full hover:bg-surface-muted"
+              >
+                <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Retour à mes adresses
+              </Link>
+            </footer>
+          </div>
         </div>
-        <div className="flex items-center gap-2 text-text-muted">
-          <Compass className="h-4 w-4" aria-hidden="true" />
-          <p className="text-xs">
-            {address.gps.lat.toFixed(4)}° N, {address.gps.lng.toFixed(4)}° E
-          </p>
-        </div>
-      </section>
-
-      {/* Actions card */}
-      <section
-        aria-label="Actions sur l'adresse"
-        className="mx-4 card rounded-xl p-4 flex flex-col gap-3 animate-fade-up stagger-4"
-      >
-        <Link href={`/dashboard/address/${code}/share`}>
-          <Button
-            variant="primary"
-            size="lg"
-            fullWidth
-            className="rounded-xl"
-            leadingIcon={<Share2 className="h-5 w-5" aria-hidden="true" />}
-          >
-            Partager / QR Code
-          </Button>
-        </Link>
-        <Link href={`/dashboard/address/${code}/edit`}>
-          <Button
-            variant="secondary"
-            size="lg"
-            fullWidth
-            className="rounded-xl"
-            leadingIcon={<Edit3 className="h-5 w-5" aria-hidden="true" />}
-          >
-            Modifier l'adresse
-          </Button>
-        </Link>
-        <Button
-          variant="ghost"
-          size="lg"
-          fullWidth
-          className="rounded-xl"
-          onClick={() =>
-            window.open(
-              `/dashboard/address/${code}/print`,
-              '_blank',
-              'noopener,noreferrer',
-            )
-          }
-          leadingIcon={<Printer className="h-5 w-5" aria-hidden="true" />}
-        >
-          Imprimer le QR
-        </Button>
-        {discoverable != null ? (
-          <Button
-            variant="ghost"
-            size="lg"
-            fullWidth
-            className="rounded-xl"
-            onClick={() => void handleToggleDiscovery()}
-            loading={togglingDiscovery}
-            leadingIcon={
-              discoverable ? (
-                <EyeOff className="h-5 w-5" aria-hidden="true" />
-              ) : (
-                <Globe className="h-5 w-5" aria-hidden="true" />
-              )
-            }
-          >
-            {discoverable
-              ? 'Retirer de la carte publique'
-              : 'Réafficher sur la carte publique'}
-          </Button>
-        ) : null}
-        <div className="pt-2">
-          <Button
-            variant="ghost"
-            size="lg"
-            fullWidth
-            className="rounded-xl !text-danger hover:!bg-danger-light/40"
-            onClick={() => setDeactivateOpen(true)}
-            leadingIcon={<Trash2 className="h-5 w-5" aria-hidden="true" />}
-          >
-            Désactiver l'adresse
-          </Button>
-          <p className="text-danger text-[11px] text-center mt-1 px-4 leading-tight opacity-80">
-            L'adresse ne sera plus consultable publiquement
-          </p>
-        </div>
-      </section>
+      </div>
 
       <Modal
         isOpen={deactivateOpen}
@@ -456,8 +512,8 @@ export function OwnerAddressView({ code: rawCode }: OwnerAddressViewProps) {
         <div className="flex flex-col gap-4">
           <p className="text-sm text-text-primary leading-relaxed">
             Cette action est <strong>irréversible</strong>. Le code{' '}
-            <span className="font-display font-bold tracking-[0.1em]">{code}</span>{' '}
-            sera définitivement retiré. Les liens et QR codes partagés ne
+            <span className="code-type font-bold">{code}</span> sera
+            définitivement retiré. Les liens et QR codes partagés ne
             fonctionneront plus.
           </p>
           <Input
@@ -470,7 +526,66 @@ export function OwnerAddressView({ code: rawCode }: OwnerAddressViewProps) {
           />
         </div>
       </Modal>
-    </section>
+    </main>
+  );
+}
+
+interface OwnerStateCardProps {
+  title: string;
+  body: string;
+  icon?: React.ReactNode;
+  actionLabel: string;
+  actionIcon?: React.ReactNode;
+  actionHref?: string;
+  onAction?: () => void;
+}
+
+function OwnerStateCard({
+  title,
+  body,
+  icon,
+  actionHref,
+  actionLabel,
+  actionIcon,
+  onAction,
+}: OwnerStateCardProps) {
+  return (
+    <main className="min-h-screen flex items-center justify-center px-4 py-12 bg-bg motif-paper">
+      <section
+        role="alert"
+        className={classNames(
+          'w-full max-w-md bg-surface text-text-primary',
+          'rounded-[var(--radius-xl)] border border-border shadow-lg p-7 sm:p-9',
+          'flex flex-col gap-4 items-start',
+        )}
+      >
+        {icon ? (
+          <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-surface-muted border border-border">
+            {icon}
+          </div>
+        ) : null}
+        <h1 className="font-display font-bold text-h2">{title}</h1>
+        <p className="text-body text-text-muted">{body}</p>
+        {actionHref ? (
+          <Link href={actionHref} className="self-start mt-1">
+            <Button variant="primary" size="md">
+              {actionLabel}
+            </Button>
+          </Link>
+        ) : null}
+        {onAction ? (
+          <Button
+            variant="primary"
+            size="md"
+            onClick={onAction}
+            className="self-start mt-1"
+            leadingIcon={actionIcon}
+          >
+            {actionLabel}
+          </Button>
+        ) : null}
+      </section>
+    </main>
   );
 }
 

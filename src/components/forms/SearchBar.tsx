@@ -144,8 +144,8 @@ export function SearchBar({ variant = 'landing', initialQuery = '' }: SearchBarP
         onSubmit={handleSubmit}
         role="search"
         className={classNames(
-          'flex items-center gap-2 rounded-xl bg-surface border border-border shadow-md transition-shadow',
-          'focus-within:ring-[3px] focus-within:ring-primary/30 focus-within:border-primary',
+          'flex items-center gap-2 rounded-full bg-surface border border-border shadow-sm transition-all',
+          'focus-within:ring-[3px] focus-within:ring-primary/20 focus-within:border-primary focus-within:shadow-md',
           variant === 'landing' ? 'p-2' : 'p-1.5',
         )}
       >
@@ -199,10 +199,10 @@ export function SearchBar({ variant = 'landing', initialQuery = '' }: SearchBarP
           }
           aria-label="Rechercher"
           className={classNames(
-            'inline-flex items-center justify-center rounded-lg bg-primary text-text-inverse',
+            'inline-flex items-center justify-center rounded-full bg-primary text-text-inverse',
             'transition-all duration-150 active:scale-[0.97]',
-            'hover:bg-primary-hover',
-            'disabled:bg-surface-muted disabled:text-text-muted disabled:cursor-not-allowed',
+            'hover:bg-primary-hover hover:shadow-md',
+            'disabled:bg-surface-muted disabled:text-text-muted disabled:cursor-not-allowed disabled:shadow-none',
             variant === 'landing' ? 'h-10 w-10' : 'h-9 w-9',
           )}
         >

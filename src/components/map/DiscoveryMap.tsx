@@ -12,6 +12,14 @@ export interface DiscoveryMapBounds {
   north: number;
 }
 
+/** API impérative exposée au parent via `onReady` — pilote la carte (FAB
+ *  géoloc, vol vers un résultat cliqué dans la liste) sans recréer le composant
+ *  ni s'appuyer sur le forwarding de ref (fragile avec `next/dynamic`). */
+export interface DiscoveryMapApi {
+  flyTo: (lat: number, lng: number, zoom?: number) => void;
+  flyToUser: () => Promise<boolean>;
+}
+
 export interface DiscoveryMapProps {
   /** Marqueurs à afficher. Fournis par le parent qui requête `/map/addresses`. */
   items: DiscoveryItem[];
@@ -23,50 +31,49 @@ export interface DiscoveryMapProps {
   onBoundsChange?: (bounds: DiscoveryMapBounds) => void;
   /** Si fourni, ajoute un marqueur "ma position" + le récupère via géoloc. */
   showUserLocation?: boolean;
-  /** Code adresse cliquée — le parent route vers `/a/:code`. */
+  /** Code adresse choisie (clic popup / carte liste) — le parent route vers
+   *  `/a/:code`. */
   onItemSelect?: (code: string) => void;
+  /** Survol/sortie d'un marqueur — synchronise la mise en avant côté liste.
+   *  `null` au mouseout. */
+  onItemActivate?: (code: string | null) => void;
+  /** Code actuellement mis en avant (survol d'une carte liste) — surligne le
+   *  marqueur correspondant. */
+  activeCode?: string | null;
+  /** Reçoit l'API impérative dès que la carte est prête. */
+  onReady?: (api: DiscoveryMapApi) => void;
 }
 
-const TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-const TILE_ATTRIBUTION = '© OpenStreetMap contributors';
+// CARTO Voyager — fond clair désaturé, tonalité chaude proche du « papier »
+// du design system. Gratuit avec attribution (OSM + CARTO).
+const TILE_URL =
+  'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+const TILE_ATTRIBUTION =
+  '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · © <a href="https://carto.com/attributions">CARTO</a>';
+const TILE_SUBDOMAINS = 'abcd';
 
-// HTML des marqueurs — SVG inline pour ne pas dépendre des PNG par défaut de
+// HTML des marqueurs — classés (`.abj-*` dans globals.css) pour piloter
+// hover/actif en CSS, et SVG inline pour ne pas dépendre des PNG par défaut de
 // Leaflet (qui 404 sur les sous-routes Next).
-function coloredMarkerHtml(iconSvg: string): string {
+function coloredMarkerHtml(iconSvg: string, fresh: boolean): string {
   return `
-    <div style="
-      position: relative;
-      width: 32px; height: 32px;
-      transform: translate(-50%, -100%);
-    ">
-      <div style="
-        position: absolute; inset: 0;
-        background: var(--color-primary);
-        border-radius: 50% 50% 50% 0;
-        transform: rotate(-45deg);
-        border: 3px solid white;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-      "></div>
-      <div style="
-        position: absolute;
-        top: 6px; left: 6px;
-        width: 20px; height: 20px;
-        display: flex; align-items: center; justify-content: center;
-        color: white;
-      ">${iconSvg}</div>
+    <div class="abj-pin${fresh ? ' animate-pin-appear' : ''}">
+      <div class="abj-pin__drop"></div>
+      <div class="abj-pin__icon">${iconSvg}</div>
     </div>
   `;
 }
 
 function mutedDotHtml(): string {
+  return `<div class="abj-dot"></div>`;
+}
+
+function userDotHtml(): string {
   return `
-    <div style="
-      width: 8px; height: 8px;
-      background: #C4BDB6;
-      border-radius: 50%;
-      opacity: 0.55;
-      transform: translate(-50%, -50%);
-    "></div>
+    <div class="abj-userdot">
+      <div class="abj-userdot__pulse animate-soft-pulse"></div>
+      <div class="abj-userdot__core"></div>
+    </div>
   `;
 }
 
@@ -82,13 +89,20 @@ const CATEGORY_SVG: Record<string, string> = {
   AUTRE: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/></svg>',
 };
 
+interface MarkerEntry {
+  marker: import('leaflet').Marker;
+  muted: boolean;
+}
+
 /**
  * Carte Leaflet publique (`/carte`). Affiche les marqueurs reçus en props,
  * applique la matrice de visibilité du CDC (DOMICILE → dot muet sans popup,
  * autres → marqueur coloré avec popup d'aperçu cliquable).
  *
  * Le parent gère le rechargement des items via `onBoundsChange` (debounce
- * recommandé côté parent pour éviter un appel à chaque pan).
+ * recommandé côté parent pour éviter un appel à chaque pan). Les marqueurs sont
+ * **diffés** (ajout/suppression par code) pour ne pas « re-tomber » à chaque
+ * pan et garder l'état actif stable.
  *
  * **À importer toujours via `dynamic(..., { ssr: false })`** — Leaflet
  * touche `window` à l'import et planterait en SSR.
@@ -100,24 +114,36 @@ export function DiscoveryMap({
   onBoundsChange,
   showUserLocation = false,
   onItemSelect,
+  onItemActivate,
+  activeCode = null,
+  onReady,
 }: DiscoveryMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   // Stocker l'API Leaflet + handles internes sur des refs pour pouvoir
   // muter les marqueurs sans détruire la carte à chaque change d'`items`.
   const stateRef = useRef<{
-    L: typeof import('leaflet') | null;
-    map: import('leaflet').Map | null;
-    markersLayer: import('leaflet').LayerGroup | null;
+    L: typeof import('leaflet');
+    map: import('leaflet').Map;
+    markersLayer: import('leaflet').LayerGroup;
+    userMarker: import('leaflet').Marker | null;
+    userPos: { lat: number; lng: number } | null;
     destroy: () => void;
   } | null>(null);
 
-  // Stocker la dernière callback dans un ref pour éviter de recréer la map
-  // si le parent passe une nouvelle référence de fonction à chaque render.
+  // Index code → marqueur, pour differ sans tout reconstruire.
+  const markersRef = useRef<Map<string, MarkerEntry>>(new Map());
+
+  // Dernières callbacks dans des refs : évite de recréer la map quand le parent
+  // passe une nouvelle référence de fonction à chaque render.
   const onBoundsChangeRef = useRef(onBoundsChange);
   const onItemSelectRef = useRef(onItemSelect);
+  const onItemActivateRef = useRef(onItemActivate);
+  const onReadyRef = useRef(onReady);
   useEffect(() => {
     onBoundsChangeRef.current = onBoundsChange;
     onItemSelectRef.current = onItemSelect;
+    onItemActivateRef.current = onItemActivate;
+    onReadyRef.current = onReady;
   });
 
   // Initialisation unique : import dynamique de Leaflet, création de la
@@ -125,19 +151,29 @@ export function DiscoveryMap({
   useEffect(() => {
     if (!containerRef.current) return;
     let cancelled = false;
+    // Map d'index stable (useRef) — capturée pour un nettoyage sûr au démontage.
+    const registry = markersRef.current;
 
     void (async () => {
       const L = (await import('leaflet')).default;
       if (cancelled || !containerRef.current) return;
 
       const map = L.map(containerRef.current, {
-        zoomControl: true,
+        zoomControl: false,
         attributionControl: true,
       }).setView([initialCenter.lat, initialCenter.lng], initialZoom);
 
+      // Contrôle de zoom repositionné en haut à droite (le coin bas est pris
+      // par le FAB géoloc + la bottom-sheet mobile). Masqué sur mobile via CSS
+      // (pinch-zoom natif). Attribution à gauche, remontée sur mobile pour
+      // rester visible au-dessus de la feuille repliée (licence OSM/CARTO).
+      L.control.zoom({ position: 'topright' }).addTo(map);
+      map.attributionControl.setPosition('bottomleft');
+
       L.tileLayer(TILE_URL, {
         attribution: TILE_ATTRIBUTION,
-        maxZoom: 19,
+        subdomains: TILE_SUBDOMAINS,
+        maxZoom: 20,
       }).addTo(map);
 
       const markersLayer = L.layerGroup().addTo(map);
@@ -157,124 +193,229 @@ export function DiscoveryMap({
       map.on('moveend', emitBounds);
       map.on('zoomend', emitBounds);
 
-      // Marqueur "ma position" — bleu pulsant, géolocalisation best-effort.
-      if (showUserLocation && typeof navigator !== 'undefined' && navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            if (cancelled) return;
-            L.circleMarker([pos.coords.latitude, pos.coords.longitude], {
-              radius: 7,
-              color: '#1A7F50',
-              weight: 3,
-              fillColor: '#2DA86B',
-              fillOpacity: 0.85,
-            }).addTo(map);
-          },
-          () => undefined,
-          { enableHighAccuracy: true, maximumAge: 60_000, timeout: 5_000 },
-        );
-      }
+      const placeUserMarker = (lat: number, lng: number) => {
+        const state = stateRef.current;
+        if (!state) return;
+        state.userPos = { lat, lng };
+        const icon = L.divIcon({
+          html: userDotHtml(),
+          className: '',
+          iconSize: [18, 18],
+          iconAnchor: [9, 9],
+        });
+        if (state.userMarker) {
+          state.userMarker.setLatLng([lat, lng]);
+        } else {
+          state.userMarker = L.marker([lat, lng], {
+            icon,
+            interactive: false,
+            keyboard: false,
+            zIndexOffset: -100,
+          }).addTo(map);
+        }
+      };
 
       stateRef.current = {
         L,
         map,
         markersLayer,
+        userMarker: null,
+        userPos: null,
         destroy: () => {
           map.off('moveend', emitBounds);
           map.off('zoomend', emitBounds);
           map.remove();
         },
       };
+
+      // Marqueur "ma position" — best-effort au démarrage si demandé.
+      if (
+        showUserLocation &&
+        typeof navigator !== 'undefined' &&
+        navigator.geolocation
+      ) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            if (cancelled) return;
+            placeUserMarker(pos.coords.latitude, pos.coords.longitude);
+          },
+          () => undefined,
+          { enableHighAccuracy: true, maximumAge: 60_000, timeout: 5_000 },
+        );
+      }
+
+      // Expose l'API impérative au parent.
+      onReadyRef.current?.({
+        flyTo: (lat, lng, zoom) => {
+          map.flyTo([lat, lng], zoom ?? Math.max(map.getZoom(), 16), {
+            duration: 0.8,
+          });
+        },
+        flyToUser: () =>
+          new Promise<boolean>((resolve) => {
+            const state = stateRef.current;
+            if (state?.userPos) {
+              map.flyTo([state.userPos.lat, state.userPos.lng], 16, {
+                duration: 0.8,
+              });
+              resolve(true);
+              return;
+            }
+            if (
+              typeof navigator === 'undefined' ||
+              !navigator.geolocation
+            ) {
+              resolve(false);
+              return;
+            }
+            navigator.geolocation.getCurrentPosition(
+              (pos) => {
+                placeUserMarker(pos.coords.latitude, pos.coords.longitude);
+                map.flyTo(
+                  [pos.coords.latitude, pos.coords.longitude],
+                  16,
+                  { duration: 0.8 },
+                );
+                resolve(true);
+              },
+              () => resolve(false),
+              { enableHighAccuracy: true, timeout: 5_000 },
+            );
+          }),
+      });
     })();
 
     return () => {
       cancelled = true;
       stateRef.current?.destroy();
       stateRef.current = null;
+      registry.clear();
     };
     // Volontairement vide — la carte est créée une seule fois ; les changements
     // d'items sont gérés par l'effet ci-dessous.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Rebuild des marqueurs à chaque changement d'`items`. On efface le
-  // layer-group puis on rajoute — c'est moins coûteux que de diff, et les
-  // volumes attendus restent modérés (< 200 marqueurs par bbox).
+  // Diff des marqueurs à chaque changement d'`items` : on ajoute les nouveaux
+  // codes, on retire ceux disparus, on laisse les existants en place (pas de
+  // « re-drop » pendant le pan, état actif préservé).
   useEffect(() => {
     const state = stateRef.current;
-    if (!state || !state.L || !state.markersLayer) return;
+    if (!state) return;
     const { L, markersLayer } = state;
-    markersLayer.clearLayers();
+    const registry = markersRef.current;
 
+    const nextCodes = new Set(items.map((it) => it.code));
+
+    // Suppressions.
+    for (const [code, entry] of registry) {
+      if (!nextCodes.has(code)) {
+        markersLayer.removeLayer(entry.marker);
+        registry.delete(code);
+      }
+    }
+
+    // Ajouts.
     for (const item of items) {
+      if (registry.has(item.code)) continue;
+
       if (item.muted) {
         // DOMICILE → point gris discret, aucun popup, clic ouvre /a/:code.
         const dot = L.divIcon({
           html: mutedDotHtml(),
           className: '',
-          iconSize: [8, 8],
+          iconSize: [9, 9],
           iconAnchor: [4, 4],
         });
         const m = L.marker([item.lat, item.lng], { icon: dot });
         m.on('click', () => onItemSelectRef.current?.(item.code));
+        m.on('mouseover', () => onItemActivateRef.current?.(item.code));
+        m.on('mouseout', () => onItemActivateRef.current?.(null));
         m.addTo(markersLayer);
+        registry.set(item.code, { marker: m, muted: true });
       } else {
         // Marqueur en clair — goutte verte + icône catégorie + popup aperçu.
         const svg = CATEGORY_SVG[item.category] ?? CATEGORY_SVG.AUTRE;
         const icon = L.divIcon({
-          html: coloredMarkerHtml(svg),
+          html: coloredMarkerHtml(svg, true),
           className: '',
-          iconSize: [32, 32],
-          iconAnchor: [16, 32],
+          iconSize: [34, 34],
+          iconAnchor: [17, 34],
+          popupAnchor: [0, -34],
         });
         const preview = item.preview;
         const popupHtml = preview
           ? `
-            <div style="min-width: 200px; font-family: var(--font-body)">
+            <div style="font-family: var(--font-body)">
               <div style="
                 width: 100%; aspect-ratio: 16/9;
-                background: url('${preview.photoUrl}') center/cover #F0EDE8;
-                border-radius: 8px; margin-bottom: 8px;
+                background: url('${preview.photoUrl}') center/cover var(--color-surface-muted);
               "></div>
-              <div style="
-                font-family: var(--font-display);
-                font-weight: 700;
-                font-size: 18px;
-                color: var(--color-primary);
-                letter-spacing: 0.05em;
-              ">${item.code}</div>
-              <div style="font-size: 12px; color: var(--color-text-muted); margin-bottom: 8px">
-                ${CATEGORIES[item.category].label} · ${preview.quartierName}
+              <div style="padding: 12px 14px 14px">
+                <div class="code-type" style="
+                  font-family: var(--font-mono);
+                  font-weight: 700;
+                  font-size: 18px;
+                  color: var(--color-primary);
+                ">${item.code}</div>
+                <div style="font-size: 12px; color: var(--color-text-muted); margin: 2px 0 10px">
+                  ${CATEGORIES[item.category].label} · ${preview.quartierName}
+                </div>
+                <button
+                  type="button"
+                  data-discovery-code="${item.code}"
+                  style="
+                    display: block; width: 100%;
+                    padding: 9px 12px;
+                    background: var(--color-primary); color: #fff;
+                    border: 0; border-radius: var(--radius-md);
+                    font-family: var(--font-body);
+                    font-weight: 600; font-size: 14px;
+                    cursor: pointer;
+                  ">Voir l'adresse</button>
               </div>
-              <button
-                type="button"
-                data-discovery-code="${item.code}"
-                style="
-                  display: block; width: 100%;
-                  padding: 8px 12px;
-                  background: var(--color-primary); color: white;
-                  border: 0; border-radius: 8px;
-                  font-weight: 600; font-size: 14px;
-                  cursor: pointer;
-                ">Voir l'adresse</button>
             </div>
           `
-          : `<div>${item.code}</div>`;
+          : `<div style="padding:12px 14px" class="code-type">${item.code}</div>`;
         const m = L.marker([item.lat, item.lng], { icon });
-        m.bindPopup(popupHtml, { closeButton: true, maxWidth: 240 });
+        m.bindPopup(popupHtml, {
+          closeButton: true,
+          maxWidth: 240,
+          className: 'abj-popup',
+        });
+        m.on('mouseover', () => onItemActivateRef.current?.(item.code));
+        m.on('mouseout', () => onItemActivateRef.current?.(null));
         m.on('popupopen', (e) => {
-          const root = (e as { popup: { getElement(): HTMLElement | null } }).popup.getElement();
+          const root = (
+            e as { popup: { getElement(): HTMLElement | null } }
+          ).popup.getElement();
           const btn = root?.querySelector<HTMLButtonElement>(
             `button[data-discovery-code="${item.code}"]`,
           );
-          btn?.addEventListener('click', () => onItemSelectRef.current?.(item.code), {
-            once: true,
-          });
+          btn?.addEventListener(
+            'click',
+            () => onItemSelectRef.current?.(item.code),
+            { once: true },
+          );
         });
         m.addTo(markersLayer);
+        registry.set(item.code, { marker: m, muted: false });
       }
     }
   }, [items]);
+
+  // Mise en avant du marqueur actif (survol d'une carte liste) — bascule une
+  // classe sur l'élément DOM du marqueur sans reconstruire la couche.
+  useEffect(() => {
+    const registry = markersRef.current;
+    for (const [code, entry] of registry) {
+      const el = entry.marker.getElement();
+      const root = el?.firstElementChild as HTMLElement | null;
+      if (!root) continue;
+      root.classList.toggle('is-active', code === activeCode);
+      entry.marker.setZIndexOffset(code === activeCode ? 1000 : 0);
+    }
+  }, [activeCode, items]);
 
   return (
     <div

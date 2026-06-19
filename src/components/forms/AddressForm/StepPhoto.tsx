@@ -25,26 +25,33 @@ export function StepPhoto({
   submitLabel = 'Créer mon adresse',
 }: StepPhotoProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(value?.photoUrl ?? null);
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [error, setError] = useState<string | null>(null);
 
-  // Free the ObjectURL when the file changes or the component unmounts.
-  useEffect(() => {
-    if (!file) return;
-    const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
+  // Libère le dernier ObjectURL au démontage (le cas « changement de fichier »
+  // est géré dans `handleFile`, qui révoque l'aperçu précédent à la volée).
+  useEffect(
+    () => () => {
+      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+    },
+    [],
+  );
 
   const handlePick = () => fileInputRef.current?.click();
 
   const handleFile = (event: React.ChangeEvent<HTMLInputElement>) => {
     const picked = event.target.files?.[0];
     if (!picked) return;
+    // Révoque l'aperçu précédent avant d'en créer un nouveau pour ce fichier.
+    if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+    const url = URL.createObjectURL(picked);
+    objectUrlRef.current = url;
     setFile(picked);
+    setPreviewUrl(url);
     setPhotoUrl(null);
     setError(null);
   };
@@ -82,8 +89,8 @@ export function StepPhoto({
           Photo de l’entrée
         </h2>
         <p className="text-sm text-text-muted">
-          Dernière étape&nbsp;! Ajoutez une photo claire pour faciliter
-          l’identification de votre adresse sur le terrain.
+          Dernière étape&nbsp;! Une photo nette de votre entrée, pour qu’on la
+          reconnaisse facilement.
         </p>
       </header>
 

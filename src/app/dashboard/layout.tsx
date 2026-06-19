@@ -20,6 +20,12 @@ export default function DashboardLayout({
   // ends in /print.
   const isPrintMode = (pathname ?? '').endsWith('/print');
 
+  // La vue détail d'une adresse (`/dashboard/address/:code`, hors sous-routes
+  // edit/share/print) s'affiche en plein écran immersif — même layout que la
+  // fiche publique `/a/:code` (carte-canvas + panneau papier), donc sans la
+  // navbar du dashboard. Les sous-routes (formulaires) gardent le chrome.
+  const isImmersiveAddress = /^\/dashboard\/address\/[^/]+$/.test(pathname ?? '');
+
   useEffect(() => {
     if (isReady && !isAuthenticated) {
       router.replace('/auth');
@@ -43,12 +49,12 @@ export default function DashboardLayout({
     );
   }
 
-  if (isPrintMode) {
+  if (isPrintMode || isImmersiveAddress) {
     return <div className="min-h-screen">{children}</div>;
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-bg motif-paper">
       <Navbar />
       {/* Sur desktop la navbar est en overlay (fixed) : on réserve la hauteur
          de la pilule flottante pour que le contenu ne passe pas dessous. */}

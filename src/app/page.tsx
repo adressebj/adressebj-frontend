@@ -261,32 +261,26 @@ export default function Home() {
             <div className="mt-12 grid gap-5 md:grid-cols-3 md:auto-rows-[minmax(0,1fr)]">
               {/* Grande tuile — précision / carte */}
               <article className="md:col-span-2 md:row-span-2 relative overflow-hidden rounded-[var(--radius-xl)] bg-canvas-deep text-text-inverse p-8 flex flex-col md:min-h-[20rem] animate-fade-up">
-                <div className="absolute inset-0 motif-light opacity-40" aria-hidden="true" />
-                <div
-                  aria-hidden="true"
-                  className="absolute -bottom-28 -right-24 w-72 h-72 rounded-full bg-primary-light/25 blur-3xl"
-                />
+                <div className="absolute inset-0 motif-light opacity-30" aria-hidden="true" />
                 <div className="relative">
-                  <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/15">
+                  <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/10">
                     <Zap className="h-6 w-6 text-accent" />
                   </span>
-                  <h3 className="mt-5 font-display font-semibold text-2xl md:text-3xl max-w-md text-text-inverse">
-                    Une précision au mètre près.
+                  <h3 className="mt-5 font-display font-semibold text-2xl md:text-3xl max-w-md text-text-inverse leading-tight">
+                    La précision du GPS, la clarté des mots.
                   </h3>
-                  <p className="mt-3 max-w-md text-white/70 leading-relaxed">
-                    Chaque adresse est un point GPS validé, doublé
-                    d&apos;instructions humaines. Les livreurs et vos visiteurs
-                    ne peuvent plus se tromper.
+                  <p className="mt-3 max-w-md text-white/70 leading-relaxed text-sm md:text-base">
+                    Votre point sur la carte est complété par vos propres repères visuels. Impossible de se perdre.
                   </p>
                   <div className="mt-6 hidden md:flex flex-wrap gap-2">
                     {[
-                      { icon: Navigation, label: 'Point GPS validé' },
-                      { icon: Compass, label: 'Instructions humaines' },
-                      { icon: MapPin, label: 'Repère visible de la rue' },
+                      { icon: Navigation, label: 'Point GPS précis' },
+                      { icon: Compass, label: 'Vos propres repères' },
+                      { icon: MapPin, label: 'Itinéraire exact' },
                     ].map(({ icon: Icon, label }) => (
                       <span
                         key={label}
-                        className="inline-flex items-center gap-1.5 rounded-full bg-white/[0.07] ring-1 ring-white/10 px-3 py-1.5 text-xs font-medium text-white/80"
+                        className="inline-flex items-center gap-1.5 rounded-full bg-white/5 border border-white/10 px-3 py-1.5 text-xs font-medium text-white/80"
                       >
                         <Icon
                           className="h-3.5 w-3.5 text-accent"
@@ -297,22 +291,16 @@ export default function Home() {
                     ))}
                   </div>
                 </div>
-                {/* Footer-carte immersif, plein cadre (bleed -mx/-mb pour
-                   toucher les bords). Prend l'espace restant (flex-1), donc
-                   plus de vide ; la scène est centrée verticalement. Le pin de
-                   destination est cerné d'anneaux de précision (radar) =
-                   illustration littérale du « au mètre près ». */}
+                {/* Footer-carte immersif */}
                 <div className="relative mt-6 -mx-8 -mb-8 hidden flex-1 min-h-[8.5rem] overflow-hidden md:block">
                   <div
-                    className="absolute inset-0 motif-light opacity-30"
+                    className="absolute inset-0 motif-light opacity-20"
                     aria-hidden="true"
                   />
-                  {/* Halo doré derrière la destination. */}
                   <div
                     aria-hidden="true"
-                    className="absolute right-12 top-1/2 -translate-y-1/2 h-40 w-40 rounded-full bg-accent/15 blur-2xl"
+                    className="absolute right-12 top-1/2 -translate-y-1/2 h-32 w-32 rounded-full bg-accent/10 blur-2xl"
                   />
-                  {/* Fondu haut : la carte se dissout dans la zone de texte. */}
                   <div
                     aria-hidden="true"
                     className="absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-canvas-deep to-transparent"
@@ -342,121 +330,109 @@ export default function Home() {
                 </div>
               </article>
 
-              {/* Tuile — code signature (anatomie du code) */}
+              {/* Tuile — code signature */}
               <article className="relative overflow-hidden rounded-[var(--radius-xl)] bg-accent-light p-7 flex flex-col justify-between min-h-[9.5rem] animate-fade-up stagger-1">
-                <div className="absolute inset-0 motif-gold opacity-70" aria-hidden="true" />
-                <h3 className="relative font-display font-semibold text-xl text-accent-text">
-                  Un code qui vous suit partout.
+                <div className="absolute inset-0 motif-gold opacity-50" aria-hidden="true" />
+                <h3 className="relative font-display font-semibold text-[1.3rem] text-accent-text leading-tight">
+                  Un code unique et définitif.
                 </h3>
-                <div className="relative mt-4">
-                  <p className="code-type text-3xl font-bold text-text-primary">
-                    CAD-4821
+                <div className="relative mt-2">
+                  <p className="text-sm text-accent-text/80 mb-4 leading-relaxed">
+                    Une fois généré, il appartient à votre porte pour toujours.
                   </p>
-                  <div className="mt-3 flex items-stretch gap-3 text-xs">
-                    <span className="flex flex-col">
-                      <span className="code-type font-bold text-accent-text">
+                  <div className="inline-flex items-center rounded-xl bg-white/70 backdrop-blur-sm border border-accent/20 shadow-sm overflow-hidden">
+                    <div className="bg-accent/10 px-4 py-3 border-r border-accent/20">
+                      <p className="code-type text-lg font-bold text-accent-text leading-none">
                         CAD
-                      </span>
-                      <span className="text-accent-text/70">quartier</span>
-                    </span>
-                    <span className="self-center text-accent-text/30">—</span>
-                    <span className="flex flex-col">
-                      <span className="code-type font-bold text-text-primary">
+                      </p>
+                      <p className="text-[10px] uppercase tracking-widest text-accent-text/70 mt-1 font-semibold">
+                        Quartier
+                      </p>
+                    </div>
+                    <div className="px-4 py-3">
+                      <p className="code-type text-lg font-bold text-text-primary leading-none">
                         4821
-                      </span>
-                      <span className="text-accent-text/70">numéro unique</span>
-                    </span>
+                      </p>
+                      <p className="text-[10px] uppercase tracking-widest text-text-muted mt-1 font-semibold">
+                        Identifiant
+                      </p>
+                    </div>
                   </div>
                 </div>
               </article>
 
-              {/* Tuile — mobile (PWA / hors-ligne) */}
-              <article className="card relative p-7 flex flex-col gap-4 animate-fade-up stagger-2">
-                <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-surface text-primary ring-1 ring-primary/15">
-                  <Smartphone className="h-6 w-6" />
-                </span>
-                <h3 className="font-display font-semibold text-lg text-text-primary">
-                  Conçu mobile, même hors-ligne
-                </h3>
-                <ul className="flex flex-col gap-2.5">
+              {/* Tuile — mobile */}
+              <article className="card relative p-7 flex flex-col justify-between animate-fade-up stagger-2">
+                <div>
+                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-primary-surface text-primary ring-1 ring-primary/10">
+                    <Smartphone className="h-5 w-5" />
+                  </span>
+                  <h3 className="mt-4 font-display font-semibold text-[1.3rem] text-text-primary leading-tight">
+                    Toujours accessible.
+                  </h3>
+                </div>
+                <ul className="mt-5 flex flex-col gap-2">
                   {[
-                    { icon: Plus, label: 'Installable en 1 tap (PWA)' },
-                    { icon: WifiOff, label: 'Consultable sans connexion' },
-                    { icon: Zap, label: "Moins d'1 Mo, ouverture instantanée" },
+                    { icon: Plus, label: "S'installe en un clic" },
+                    { icon: Zap, label: "S'ouvre instantanément" },
+                    { icon: WifiOff, label: "Fonctionne sans réseau" },
                   ].map(({ icon: Icon, label }) => (
                     <li
                       key={label}
-                      className="flex items-center gap-2.5 text-sm text-text-muted"
+                      className="flex items-center gap-3 text-sm text-text-muted font-medium"
                     >
-                      <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-primary-surface text-primary">
-                        <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-                      </span>
+                      <Icon className="h-4 w-4 text-primary/70 shrink-0" aria-hidden="true" />
                       {label}
                     </li>
                   ))}
                 </ul>
               </article>
 
-              {/* Tuile large — fiable / officiel + faits de confiance */}
-              <article className="md:col-span-3 card relative p-7 flex flex-col gap-6 md:flex-row md:items-center animate-fade-up stagger-3">
-                <div className="flex items-start gap-4 md:max-w-[15rem]">
-                  <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary-surface text-primary ring-1 ring-primary/15">
-                    <Shield className="h-6 w-6" />
+              {/* Tuile large — fiable / officiel */}
+              <article className="md:col-span-3 card relative px-6 py-5 md:px-8 flex flex-col md:flex-row md:items-center gap-6 animate-fade-up stagger-3">
+                <div className="flex items-center gap-4 shrink-0 lg:max-w-[17rem]">
+                  <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary-surface text-primary ring-1 ring-primary/10">
+                    <Shield className="h-5 w-5" />
                   </span>
                   <div>
-                    <h3 className="font-display font-semibold text-lg text-text-primary">
-                      Fiable, vérifié, officiel
+                    <h3 className="font-display font-semibold text-[1.1rem] text-text-primary leading-tight">
+                      Un réseau de confiance.
                     </h3>
-                    <p className="text-sm text-text-muted leading-relaxed">
-                      Le référentiel d&apos;adressage numérique du Bénin.
+                    <p className="text-sm text-text-muted mt-0.5 leading-snug pr-2">
+                      Vérifié par la modération et évalué par les visiteurs.
                     </p>
                   </div>
                 </div>
 
                 <div
                   aria-hidden="true"
-                  className="hidden md:block h-14 w-px shrink-0 bg-border"
+                  className="hidden md:block h-10 w-px shrink-0 bg-border/80"
                 />
 
-                <ul className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-4">
-                  {[
-                    {
-                      icon: Check,
-                      title: 'Modéré avant publication',
-                      sub: 'vérification humaine',
-                    },
-                    {
-                      icon: MapPin,
-                      title: 'Quartiers officiels',
-                      sub: 'référentiel administratif',
-                    },
-                    {
-                      icon: QrCode,
-                      title: 'Gratuit pour les habitants',
-                      sub: 'code, lien & QR inclus',
-                    },
-                  ].map(({ icon: Icon, title, sub }) => (
-                    <li key={title} className="flex items-start gap-3">
-                      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-surface text-primary">
-                        <Icon className="h-4 w-4" aria-hidden="true" />
-                      </span>
-                      <div className="leading-tight">
-                        <p className="text-sm font-semibold text-text-primary">
+                <div className="flex-1 flex flex-col sm:flex-row sm:items-center justify-between gap-5">
+                  <ul className="flex flex-col sm:flex-row gap-4 sm:gap-6">
+                    {[
+                      { icon: Check, title: 'Modéré manuellement' },
+                      { icon: MapPin, title: 'Quartiers officiels' },
+                      { icon: QrCode, title: 'Gratuit pour tous' },
+                    ].map(({ icon: Icon, title }) => (
+                      <li key={title} className="flex items-center gap-2.5">
+                        <Icon className="h-4 w-4 text-primary shrink-0" aria-hidden="true" />
+                        <span className="text-sm font-medium text-text-primary">
                           {title}
-                        </p>
-                        <p className="text-xs text-text-muted">{sub}</p>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
 
-                <Link
-                  href="/carte"
-                  className="inline-flex items-center gap-2 self-start md:self-auto shrink-0 rounded-full px-5 h-11 font-semibold text-primary border border-border-strong hover:border-primary hover:bg-primary-surface transition-all tap-press whitespace-nowrap"
-                >
-                  Voir la carte
-                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                </Link>
+                  <Link
+                    href="/carte"
+                    className="inline-flex items-center justify-center gap-2 shrink-0 rounded-full px-5 h-10 text-sm font-semibold text-primary border border-border-strong hover:border-primary hover:bg-primary-surface transition-all tap-press whitespace-nowrap"
+                  >
+                    Voir la carte
+                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                  </Link>
+                </div>
               </article>
             </div>
           </div>

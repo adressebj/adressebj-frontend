@@ -199,9 +199,9 @@ export function AddressForm({ initialStep = 0 }: AddressFormProps) {
           </button>
           <h1
             id="address-form-title"
-            className="font-display font-bold text-h3 text-primary"
+            className="font-display font-black text-h3 text-text-primary"
           >
-            Créer une Adresse
+            Créer une adresse
           </h1>
           <Link
             href="/"
@@ -258,8 +258,11 @@ export function AddressForm({ initialStep = 0 }: AddressFormProps) {
   );
 }
 
-// Stepper à pastilles numérotées (Design System §6.10) : étape complétée =
-// pastille verte + check, active = verte + numéro, future = grise.
+// Stepper à pastilles **losange** — écho du motif Fon/kente de la marque
+// (cf. `CategoryMedallion`, `StepsList`). Étape complétée = losange vert plein +
+// check, active = losange papier liseré vert + numéro, future = losange muet.
+// La plaque tourne à 45°, le contenu reste droit (contre-rotation implicite :
+// le numéro/icône vit dans une couche non tournée par-dessus).
 function Stepper({ current }: { current: number }) {
   return (
     <div aria-label={`Étape ${current + 1} sur ${STEP_LABELS.length}`}>
@@ -272,16 +275,30 @@ function Stepper({ current }: { current: number }) {
               <li className="flex flex-col items-center gap-1.5">
                 <span
                   aria-hidden="true"
-                  className={classNames(
-                    'flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold border-2 transition-colors',
-                    done
-                      ? 'bg-primary border-primary text-text-inverse'
-                      : active
-                        ? 'bg-primary-surface border-primary text-primary'
-                        : 'bg-surface border-border text-text-muted',
-                  )}
+                  className="relative flex h-8 w-8 items-center justify-center"
                 >
-                  {done ? <Check className="h-4 w-4" /> : idx + 1}
+                  <span
+                    className={classNames(
+                      'absolute inset-0 rotate-45 rounded-[7px] border-2 transition-colors',
+                      done
+                        ? 'bg-primary border-primary'
+                        : active
+                          ? 'bg-primary-surface border-primary'
+                          : 'bg-surface border-border',
+                    )}
+                  />
+                  <span
+                    className={classNames(
+                      'relative text-sm font-semibold',
+                      done
+                        ? 'text-text-inverse'
+                        : active
+                          ? 'text-primary'
+                          : 'text-text-muted',
+                    )}
+                  >
+                    {done ? <Check className="h-4 w-4" /> : idx + 1}
+                  </span>
                 </span>
                 <span
                   className={classNames(
@@ -331,9 +348,9 @@ function DuplicateInterstitial({
           Des adresses existent près de vous
         </h2>
         <p className="text-sm text-text-muted">
-          Une porte est peut-être déjà enregistrée à cet endroit. Rattachez-vous
-          à une adresse existante plutôt que d’en créer un doublon — ou
-          continuez si la vôtre est bien différente.
+          Il y a peut-être déjà une adresse ici. Rejoignez-en une plutôt que
+          d’en créer une en double, ou continuez si la vôtre est vraiment
+          différente.
         </p>
       </header>
 
@@ -341,9 +358,9 @@ function DuplicateInterstitial({
         {addresses.map((address) => (
           <li
             key={address.code}
-            className="flex items-center gap-3 rounded-md border border-border bg-surface p-3"
+            className="flex items-center gap-3 rounded-[var(--radius-lg)] border border-border bg-surface p-3 shadow-sm"
           >
-            <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-sm bg-surface-muted">
+            <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-[var(--radius-md)] bg-surface-muted">
               <Image
                 src={address.photoUrl}
                 alt={`Portail ${address.code}`}

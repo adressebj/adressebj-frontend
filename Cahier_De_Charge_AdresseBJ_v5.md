@@ -86,7 +86,7 @@ Concevoir et développer une **Progressive Web App (PWA)** permettant de créer,
 | Permettre à tout habitant de créer son adresse rapidement | Temps moyen de création mesuré en test utilisateur | ≤ 5 minutes. Seuil intégrant la saisie guidée obligatoire via prompts structurés. | Semaine 4 |
 | Générer des codes uniques et non-ambigus | Nombre de collisions sur jeu de test | Zéro collision sur 1 000 adresses (test unitaire automatisé). | Semaine 3 |
 | Fournir à toute personne disposant d'un lien ou d'un code un accès visuel sans appel téléphonique | Taux de réussite en test utilisateur contrôlé | ≥ 90% sur 5 testeurs fictifs. Seuil inspiré des standards Nielsen Norman Group. | Semaine 6 |
-| Exposer une API REST versionnée et documentée | Endpoints `/api/v1/` fonctionnels sur Swagger | 7 endpoints opérationnels : `resolve`, `verify`, `eta`, `visits/confirm`, `zones/analytics`, `zones` (liste), `addresses` (création). | Semaine 6 |
+| Exposer une API REST versionnée et documentée | Endpoints `/api/v1/` fonctionnels sur Swagger | 7 endpoints opérationnels : `resolve`, `verify`, `eta`, `visits/confirm`, `quartiers/analytics`, `quartiers` (liste), `addresses` (création). | Semaine 6 |
 | Déployer l'application avant la soutenance | URL active et fonctionnelle | Application accessible en ligne. | Semaine 6 |
 
 ---
@@ -101,7 +101,7 @@ Le système AdresseBJ s'adresse à quatre profils distincts :
 |--------|-------------|----------------------|
 | **Habitant** | Toute personne souhaitant enregistrer son domicile ou commerce, consulter une adresse ou naviguer vers un lieu. Tout âge, tout niveau technique. Compte obligatoire pour toute action avec effet (évaluation, signalement, contribution terrain, création d'adresse). | Créateur, consultant, évaluateur et signaleur d'adresse |
 | **Modérateur** | Utilisateur dont le compte est créé manuellement par un Administrateur. Dispose exclusivement de permissions de modération : validation ou rejet des adresses en attente, gestion des signalements et des contributions terrain. | Modérateur de contenu |
-| **Administrateur** | Gestionnaire global de la plateforme. Dispose de toutes les permissions du Modérateur, plus la gestion des zones géographiques, des clés API, du référentiel et des comptes Modérateurs. | Gestionnaire de plateforme |
+| **Administrateur** | Gestionnaire global de la plateforme. Dispose de toutes les permissions du Modérateur, plus la gestion des quartiers, des clés API, du référentiel et des comptes Modérateurs. | Gestionnaire de plateforme |
 | **Développeur tiers** | Entreprise ou service intégrant l'API dans son propre système. | Intégrateur API |
 
 ### Gestion des accès
@@ -109,10 +109,10 @@ Le système AdresseBJ s'adresse à quatre profils distincts :
 Le système distingue quatre niveaux d'accès :
 
 - **Accès public** (toute personne disposant d'un lien, d'un QR code ou du code unique) : consultation d'une adresse (photo, instructions) et navigation intégrée. Aucune inscription requise.
-- **Accès Habitant** : création, modification et désactivation de ses propres adresses ; évaluation et signalement sur toute adresse publiée. L'inscription se fait exclusivement par numéro de téléphone vérifié par OTP. L'email est un champ optionnel de profil, jamais utilisé comme identifiant d'authentification.
-  > *Justification : le téléphone est universel au Bénin, cohérent avec le partage WhatsApp, et évite la gestion de deux flux d'authentification distincts.*
+- **Accès Habitant** : création, modification et désactivation de ses propres adresses ; évaluation et signalement sur toute adresse publiée. L'inscription se fait par numéro de téléphone (vérifié par OTP à l'inscription), avec définition d'un mot de passe et d'un email obligatoires ; la connexion courante se fait ensuite par téléphone + mot de passe. L'OTP ne sert qu'à vérifier le numéro à l'inscription et lors d'un changement de numéro — il n'est pas un moyen de connexion. L'email est obligatoire mais n'est jamais utilisé comme identifiant d'authentification (le téléphone l'est).
+  > *Justification : le téléphone est universel au Bénin et cohérent avec le partage WhatsApp ; le mot de passe permet une reconnexion sans dépendre d'un SMS à chaque session.*
 - **Accès Modérateur** : permissions de modération exclusivement : validation ou rejet des adresses en attente de publication (motif obligatoire en cas de rejet), gestion des signalements en attente, et validation ou rejet des contributions terrain en attente. Compte créé manuellement par un Administrateur.
-- **Accès Administrateur** : toutes les permissions de modération du Modérateur, plus la gestion des zones géographiques, des clés API, du référentiel et des comptes Modérateurs. Compte créé manuellement.
+- **Accès Administrateur** : toutes les permissions de modération du Modérateur, plus la gestion des quartiers, des clés API, du référentiel et des comptes Modérateurs. Compte créé manuellement.
 
 ### Clés API
 
@@ -206,14 +206,14 @@ Pour qu'un habitant puisse diffuser son adresse, il doit pouvoir l'enregistrer d
 
 #### Format du code adresse
 
-Le code adresse adopte le format **`[PRÉFIXE-ZONE]-[SÉQUENCE-4CAR]`**.
+Le code adresse adopte le format **`[PRÉFIXE-QUARTIER]-[SÉQUENCE-4CAR]`**.
 
 Exemples : `AKP-7X3K` (Akpakpa), `CAD-3M9P` (Cadjèhoun), `FID-K2QR` (Fidjrossè).
 
-- **Préfixe zone :** 3 caractères générés automatiquement depuis le nom du quartier importé d'OSM (Akpakpa → `AKP`). En cas de collision entre deux quartiers, un discriminant numérique est ajouté (`AKP` / `AK2`). L'administrateur peut renommer manuellement.
-- **Séquence :** 4 caractères en base 32, alphabet épuré sans `0, O, I, L` pour éviter les confusions visuelles et orales. Soit 32⁴ = **1 048 576 combinaisons par zone**, zéro collision garantie à l'échelle du prototype.
+- **Préfixe quartier :** 3 caractères générés automatiquement depuis le nom du quartier importé d'OSM (Akpakpa → `AKP`). En cas de collision entre deux quartiers, un discriminant numérique est ajouté (`AKP` / `AK2`). L'administrateur peut renommer manuellement.
+- **Séquence :** 4 caractères en base 32, alphabet épuré sans `0, O, I, L` pour éviter les confusions visuelles et orales. Soit 32⁴ = **1 048 576 combinaisons par quartier**, zéro collision garantie à l'échelle du prototype.
 - **Génération :** aléatoire avec vérification d'unicité en base avant persistance.
-- **Permanence :** un code ne change jamais, même si l'habitant modifie son adresse ou si l'admin restructure les zones. Une zone ne peut jamais être supprimée, seulement désactivée pour les nouvelles créations.
+- **Permanence :** un code ne change jamais, même si l'habitant modifie son adresse ou si l'admin restructure les quartiers. Un quartier ne peut jamais être supprimé, seulement désactivé pour les nouvelles créations.
 
 #### Saisie et stockage des instructions d'accès
 
@@ -298,7 +298,7 @@ Une fois son adresse créée, l'habitant peut la partager sans demander à son i
 
 L'accès à une adresse passe par une barre de recherche unique, sans distinction de mode pour l'utilisateur. Cette barre accepte indifféremment :
 
-- un **code AdresseBJ** (format `[ZONE]-[4CAR]`) — le système le reconnaît à son format et résout directement l'adresse correspondante ;
+- un **code AdresseBJ** (format `[QUARTIER]-[4CAR]`) — le système le reconnaît à son format et résout directement l'adresse correspondante ;
 - un **lieu en texte libre** (nom d'un commerce, d'un quartier, d'un repère) — le système effectue alors un géocodage via Nominatim (OpenStreetMap).
 
 Le routage entre ces deux cas est interne : l'utilisateur saisit, le système détermine seul s'il s'agit d'un code ou d'un lieu. La recherche par code est la fonction distinctive d'AdresseBJ ; la recherche en texte libre offre une expérience familière, comparable à celle des outils cartographiques grand public, tout en reposant intégralement sur des données ouvertes OpenStreetMap.
@@ -355,7 +355,7 @@ L'espace personnel de l'Habitant regroupe deux éléments :
 
 L'Habitant peut modifier depuis son espace personnel :
 - Son nom et prénom : modification libre, sans vérification.
-- Son email : modification libre, sans vérification. L'email n'étant pas un identifiant d'authentification, aucune confirmation n'est requise.
+- Son email : modification libre, sans vérification (l'email n'étant pas un identifiant d'authentification). Il ne peut toutefois pas être laissé vide : un email valide est obligatoire pour tout compte habitant actif.
 - Son numéro de téléphone : nécessite une re-vérification OTP du nouveau numéro. Les sessions actives sont invalidées à l'issue du changement.
 
 #### Suppression de compte
@@ -377,11 +377,11 @@ Les entreprises, services publics et applications tierces peuvent interroger le 
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /api/v1/addresses/{code}/resolve` | Résolution d'un code en données structurées (coordonnées GPS, photo, instructions, catégorie, zone). Réponse JSON intégrable sans transformation. |
+| `GET /api/v1/addresses/{code}/resolve` | Résolution d'un code en données structurées (coordonnées GPS, photo, instructions, catégorie, quartier). Réponse JSON intégrable sans transformation. |
 | `GET /api/v1/addresses/{code}/verify` | Retourne la moyenne des évaluations (sur 5, arrondie au dixième) et le nombre total d'évaluations. Conçu pour les cas d'usage de vérification d'adresse (KYC fintech, banques, assurances). |
 | `GET /api/v1/addresses/{code}/eta` | Estimation du temps de trajet calculée sur des données réelles. La fiabilité est nulle au lancement et croît avec le volume. |
 | `POST /api/v1/visits/confirm` | Permet aux intégrateurs de notifier le système à l'issue d'un trajet. Transmet le prix final et l'heure d'arrivée réelle. |
-| `GET /api/v1/zones/{id}/analytics` | Rapport agrégé par zone : volume de trajets, prix médian, ETA médian, heures de pointe, taux de succès. |
+| `GET /api/v1/quartiers/{id}/analytics` | Rapport agrégé par quartier : volume de trajets, prix médian, ETA médian, heures de pointe, taux de succès. |
 
 #### Comportement de l'API face à une adresse indisponible
 
@@ -396,15 +396,19 @@ Les entreprises, services publics et applications tierces peuvent interroger le 
 La remontée des données via `POST /api/v1/visits/confirm` est une **condition d'utilisation de l'API**. Un système de quota progressif est appliqué :
 
 - **Accès de base :** `resolve`, `verify` et `eta` accessibles à toute clé API active.
-- **Accès analytique** (`zones/analytics`) : conditionné à un ratio de remontée **≥ 80%** sur 30 jours glissants. Si le ratio chute, l'accès aux analytics est suspendu automatiquement avec notification. L'endpoint `resolve` reste toujours accessible.
+- **Accès analytique** (`quartiers/analytics`) : conditionné à un ratio de remontée **≥ 80%** sur 30 jours glissants. Si le ratio chute, l'accès aux analytics est suspendu automatiquement avec notification. L'endpoint `resolve` reste toujours accessible.
 
 ---
 
-### Besoin 6 : Gérer les zones géographiques
+### Besoin 6 : Gérer les quartiers
 
-À l'initialisation, un script importe automatiquement les quartiers des communes couvertes depuis **OpenStreetMap via l'API Overpass**. Chaque quartier devient une zone avec son périmètre GPS, son nom officiel et son préfixe de code généré.
+Le **quartier** est l'unité géographique d'AdresseBJ. Il correspond au « quartier de ville », dernier niveau du découpage administratif béninois (Département → Commune → Arrondissement → Quartier). C'est lui qui porte le préfixe de code (Akpakpa → `AKP`).
 
-L'administrateur arrive sur un tableau de bord pré-rempli : son rôle est de valider, ajuster et activer les zones, pas de les créer depuis zéro. Pour les quartiers informels absents d'OSM, la création manuelle reste disponible.
+À l'initialisation, un script importe automatiquement les quartiers des communes couvertes depuis **OpenStreetMap via l'API Overpass**. Chaque quartier importé devient un quartier dans le système, avec son nom officiel et son préfixe de code généré.
+
+> **Périmètre vs point.** OpenStreetMap ne fournit pas toujours une frontière : beaucoup de quartiers n'y sont qu'un **point central**, pas un polygone. Le système l'assume — le périmètre est optionnel. Conséquence sur le rattachement d'une adresse à son quartier : si le quartier dispose d'un polygone, le rattachement se fait par appartenance géographique (le point est-il dans le polygone ?) ; à défaut de polygone, l'adresse est rattachée au **quartier le plus proche** (distance au point central). Ce rattachement est déterminé une seule fois, à la création de la localisation, et toutes les adresses du même point physique en héritent.
+
+L'administrateur arrive sur un tableau de bord pré-rempli : son rôle est de valider, ajuster et activer les quartiers, pas de les créer depuis zéro. Pour les quartiers informels absents d'OSM, la création manuelle reste disponible.
 
 L'administrateur peut :
 - Visualiser la couverture sur une carte et ajuster les périmètres si nécessaire.
@@ -486,7 +490,7 @@ Le projet est réalisé dans un cadre académique avec des outils majoritairemen
 | Base de données | Render.com PostgreSQL, plan gratuit | 0 FCFA |
 | Stockage photos | Cloudinary, plan gratuit (25 Go, compression `q_auto,f_auto`) | 0 FCFA |
 | Navigation et routage | Leaflet.js + tuiles OpenStreetMap + API publique OSRM | 0 FCFA |
-| Import zones géographiques | API Overpass (OpenStreetMap), import initial unique | 0 FCFA |
+| Import des quartiers | API Overpass (OpenStreetMap), import initial unique | 0 FCFA |
 | Maintien actif backend | cron-job.org, ping toutes les 10 min (7h–23h) | 0 FCFA |
 | Nom de domaine (optionnel) | adressebj.com ou sous-domaine gratuit | ~5 000 FCFA/an |
 | Outils de développement | VS Code, GitHub, Figma, Postman | 0 FCFA |
@@ -535,9 +539,9 @@ La réalisation du projet s'étend sur **7 semaines**. Le planning est organisé
 
 | Sem. | Dev Backend | Dev Frontend | Mode | Critère de validation du jalon |
 |------|-------------|--------------|------|--------------------------------|
-| **S1** | Schéma BDD + contrats API + mocks JSON + import zones OSM | Révision conjointe des mocks + setup repos + premières maquettes Figma | Conjoint | Mocks JSON validés. Schéma BDD approuvé. Zones importées depuis OSM. |
+| **S1** | Schéma BDD + contrats API + mocks JSON + import quartiers OSM | Révision conjointe des mocks + setup repos + premières maquettes Figma | Conjoint | Mocks JSON validés. Schéma BDD approuvé. Quartiers importés depuis OSM. |
 | **S2** | Auth OTP téléphone + endpoints `resolve` & `verify` + génération codes + logique rattachement localisation 15m | Setup Next.js + interface habitant sur mocks + début interface consultation | Parallèle | Auth testée sur Postman. Codes générés sans collision (test unitaire). Rattachement localisation fonctionnel. Interface habitant fonctionnelle sur mocks. |
-| **S3** | Endpoints restants (`eta`, `visits/confirm`, `zones/analytics`) + deploy Render + Swagger partiel | Interface consultation + navigation Leaflet/OSRM + QR code + og:tags WhatsApp + deploy Vercel | Parallèle | Les 7 endpoints répondent sur Postman. Navigation intégrée fonctionnelle. Frontend déployé sur URL publique. |
+| **S3** | Endpoints restants (`eta`, `visits/confirm`, `quartiers/analytics`) + deploy Render + Swagger partiel | Interface consultation + navigation Leaflet/OSRM + QR code + og:tags WhatsApp + deploy Vercel | Parallèle | Les 7 endpoints répondent sur Postman. Navigation intégrée fonctionnelle. Frontend déployé sur URL publique. |
 | **S4** | Support intégration + corrections backend + tests Postman finaux | Branchement vrai backend + dashboard modération frontend (3 files) + tests utilisateurs | Intégration | Scénario end-to-end : création, partage, consultation, navigation sans erreur. `410 Gone` validé sur code désactivé. Les 3 files de modération sont fonctionnelles. |
 | **S5** | Dashboard admin API + Swagger complet + polish final API | Corrections bugs + polish UI + répétition scénario démo | Parallèle | Swagger complet sur les 7 endpoints. Test : ≥ 90% de réussite sur 5 scénarios. Zéro bug bloquant. |
 | **S6** | *Marge de sécurité* | *Marge de sécurité* | Buffer | Semaine libre. Utilisée uniquement si un jalon précédent est incomplet. |
@@ -548,7 +552,7 @@ La réalisation du projet s'étend sur **7 semaines**. Le planning est organisé
 Un filet de sécurité technique minimal est défini en trois niveaux :
 
 - **Tests unitaires :** génération de codes (zéro collision sur 1 000 adresses), assemblage des instructions (`steps.join`), calcul du score de fiabilité, rattachement à une localisation existante dans un rayon de 15 m, blocage de la création d'une seconde adresse par le même habitant sur une localisation.
-- **Tests d'intégration :** les 5 endpoints API critiques (`resolve`, `verify`, `eta`, `visits/confirm`, `zones/analytics`) testés avec cas nominaux et cas d'erreur (`404`, `410`, `401`).
+- **Tests d'intégration :** les 5 endpoints API critiques (`resolve`, `verify`, `eta`, `visits/confirm`, `quartiers/analytics`) testés avec cas nominaux et cas d'erreur (`404`, `410`, `401`).
 - **Smoke test de démo :** script automatisé validant le parcours complet création → validation → partage → consultation → navigation avant chaque déploiement ou démonstration.
 
 ---
@@ -564,7 +568,7 @@ AdresseBJ répond à un besoin réel et quotidien au Bénin. En dotant chaque li
 - Extension progressive à toutes les communes du Bénin.
 - Partenariats avec les acteurs du e-commerce, de la logistique et des services financiers locaux.
 - Vérification d'identité (KYC) et contrôle de majorité légale pour les créateurs de comptes.
-- ETA et Zone analytics exposés comme services premium une fois la masse critique de données atteinte.
+- ETA et analytics par quartier exposés comme services premium une fois la masse critique de données atteinte.
 - Instance OSRM dédiée hébergée en propre pour s'affranchir de l'API publique en production.
 - Contestation des décisions de modération (désactivation, rejet).
 

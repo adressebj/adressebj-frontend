@@ -54,7 +54,7 @@ export default function ShareAddressPage({ params }: RouteParams) {
   return (
     <div className="mx-auto w-full max-w-2xl flex flex-col min-h-full">
       {/* App bar — close + title */}
-      <header className="flex items-center gap-4 px-4 h-16 w-full bg-surface">
+      <header className="flex items-center gap-4 px-4 h-16 w-full">
         <Link
           href={`/dashboard/address/${code}`}
           aria-label="Fermer"
@@ -62,23 +62,23 @@ export default function ShareAddressPage({ params }: RouteParams) {
         >
           <X className="h-6 w-6" aria-hidden="true" />
         </Link>
-        <h1 className="font-display font-semibold text-2xl text-primary">
-          Code QR de l'adresse
+        <h1 className="font-display font-bold text-2xl text-text-primary">
+          Code QR de l’adresse
         </h1>
       </header>
 
       <section className="flex-1 w-full px-4 pb-12 flex flex-col items-center">
-        {/* QR card */}
+        {/* Plaque QR — cadre papier + liseré or (langage « plaque » de la fiche). */}
         <div
           ref={qrWrapperRef}
-          className="w-full max-w-sm aspect-square card rounded-xl p-8 flex items-center justify-center mb-8 mt-4 [&_canvas]:!w-full [&_canvas]:!h-full"
+          className="w-full max-w-sm aspect-square card rounded-[var(--radius-xl)] ring-1 ring-accent/25 p-8 flex items-center justify-center mb-8 mt-4 [&_canvas]:!w-full [&_canvas]:!h-full animate-fade-up"
         >
           <QRCodeDisplay url={shareUrl} code={code} size={512} showDownload={false} />
         </div>
 
-        {/* Identity */}
-        <div className="text-center space-y-1 mb-10">
-          <h2 className="font-display font-bold text-[32px] leading-tight text-primary">
+        {/* Identity — le code comme objet typographique signature. */}
+        <div className="text-center space-y-1 mb-10 animate-fade-up stagger-1">
+          <h2 className="code-type text-3xl sm:text-[32px] font-black leading-tight text-primary">
             {code}
           </h2>
           <p className="text-base text-text-muted break-all">{shareUrl}</p>
@@ -95,7 +95,7 @@ export default function ShareAddressPage({ params }: RouteParams) {
             onClick={downloadImage}
             leadingIcon={<Download className="h-5 w-5" aria-hidden="true" />}
           >
-            Télécharger l'image
+            Télécharger l’image
           </Button>
           <Button
             type="button"
@@ -130,7 +130,7 @@ export default function ShareAddressPage({ params }: RouteParams) {
         </div>
 
         <p className="mt-10 text-xs text-text-muted text-center leading-relaxed px-4">
-          Scannez ce code pour accéder instantanément aux instructions d'accès.
+          Scannez ce code pour accéder instantanément aux instructions d’accès.
         </p>
       </section>
     </div>

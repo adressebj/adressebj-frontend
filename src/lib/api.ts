@@ -13,6 +13,7 @@ import {
   getModerationStats,
   habitantAccounts,
   habitants,
+  landmarks,
   moderators,
   pendingRegistrations,
   quartiers,
@@ -46,6 +47,7 @@ import type {
   ModerationDecisionInput,
   ModerationQueueItem,
   ModerationStats,
+  NearbyLandmark,
   Notification,
   OwnerAddress,
   PublicAddress,
@@ -58,6 +60,7 @@ import type {
   VisitStartInput,
   VisitStartResponse,
 } from '@/types/api';
+import { pointInPolygon } from '@/lib/utils';
 
 // A small artificial latency makes loading/skeleton states visible in the real
 // app. Under Jest it only slows the suite down and pushes async assertions past
@@ -86,6 +89,10 @@ type Auth = 'jwt' | 'apiKey' | 'none';
 interface FetchOptions extends Omit<RequestInit, 'body'> {
   auth?: Auth;
   body?: unknown;
+  /** Route interne (hors contrat public versionné) : appelée sur
+      `${baseUrl}<path>` au lieu de `${baseUrl}/api/v1<path>`. Réservée aux
+      helpers du produit (ex. repères de création), absente du Swagger. */
+  internal?: boolean;
 }
 
 function delay(ms: number) {
@@ -122,7 +129,7 @@ async function realFetch<T>(path: string, options: FetchOptions): Promise<T> {
     throw new ApiError(0, 'API_URL_MISSING', "L'URL de l'API n'est pas configurée.");
   }
 
-  const { auth = 'none', body, headers, ...rest } = options;
+  const { auth = 'none', body, headers, internal = false, ...rest } = options;
   const finalHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(headers as Record<string, string> | undefined),
@@ -133,7 +140,7 @@ async function realFetch<T>(path: string, options: FetchOptions): Promise<T> {
     if (header) finalHeaders.Authorization = header;
   }
 
-  const res = await fetch(`${baseUrl}/api/v1${path}`, {
+  const res = await fetch(`${baseUrl}${internal ? '' : '/api/v1'}${path}`, {
     ...rest,
     headers: finalHeaders,
     body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -346,20 +353,29 @@ async function mockFetch<T>(path: string, options: FetchOptions): Promise<T> {
     return { sent: true } as unknown as T;
   }
 
-  // --- Nearby addresses (duplicate detection on create) ---
-  if (path.startsWith('/addresses/nearby') && method === 'GET') {
+  // --- Repères avoisinants (point de départ des instructions, création) ---
+  // Endpoint INTERNE (hors /api/v1) : POI connus proches du GPS, triés par
+  // distance. Liste vide = rédaction libre (cas normal, pas une erreur). En
+  // production le backend encapsule Overpass + cache géographique (CDC §Overpass).
+  if (path.startsWith('/internal/nearby-landmark') && method === 'GET') {
     const url = new URL(path, 'http://mock.local');
     const lat = Number(url.searchParams.get('lat'));
     const lng = Number(url.searchParams.get('lng'));
-    const radius = Number(url.searchParams.get('radius') ?? '15');
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
       return [] as unknown as T;
     }
-    const near = addresses
-      .filter((a) => a.isActive)
-      .filter((a) => haversineMeters(lat, lng, a.gps.lat, a.gps.lng) <= radius)
-      .map(toPublicAddress);
-    return near as unknown as T;
+    const RADIUS_M = 300;
+    const found: NearbyLandmark[] = landmarks
+      .map((l) => ({
+        name: l.name,
+        category: l.category,
+        lat: l.lat,
+        lng: l.lng,
+        distanceM: Math.round(haversineMeters(lat, lng, l.lat, l.lng)),
+      }))
+      .filter((l) => l.distanceM <= RADIUS_M)
+      .sort((a, b) => a.distanceM - b.distanceM);
+    return found as unknown as T;
   }
 
   // --- Addresses (visitor public read) ---
@@ -586,9 +602,21 @@ async function mockFetch<T>(path: string, options: FetchOptions): Promise<T> {
   // --- Address create ---
   if (path === '/addresses' && method === 'POST') {
     const input = options.body as CreateAddressInput;
-    const quartier = quartiers.find((q) => q.id === input.quartierId);
+    // Quartier dérivé du GPS (rattachement automatique côté backend, CDC v5
+    // §Besoin 1) — l'habitant ne choisit jamais sa zone. On résout par
+    // point-in-polygon sur les quartiers actifs géométrés.
+    const quartier = quartiers.find(
+      (q) =>
+        q.isActive &&
+        q.polygon != null &&
+        pointInPolygon(input.gpsLat, input.gpsLng, q.polygon.coordinates),
+    );
     if (!quartier) {
-      throw new ApiError(400, 'COORDINATES_OUT_OF_COVERAGE', 'Quartier introuvable.');
+      throw new ApiError(
+        400,
+        'COORDINATES_OUT_OF_COVERAGE',
+        'Cette position est hors des quartiers couverts par AdresseBJ.',
+      );
     }
     if (!input.steps || input.steps.filter((s) => s.trim()).length < 2) {
       throw new ApiError(400, 'STEPS_REQUIRED', 'Au moins 2 étapes sont requises.');
@@ -596,20 +624,20 @@ async function mockFetch<T>(path: string, options: FetchOptions): Promise<T> {
     if (!input.category) {
       throw new ApiError(400, 'CATEGORY_REQUIRED', 'Veuillez choisir une catégorie.');
     }
-    // 409 — coordonnées GPS identiques (< 3 m) à une adresse existante.
-    // L'interstitiel de proximité (15 m) côté StepGPS attrape la majorité
-    // des cas, mais le backend reste autoritaire (CDC Backend §9 codes
-    // d'erreurs métier). On simule ici pour que le frontend gère le 409.
+    // 409 — l'habitant a déjà une adresse sur cette localisation (≤ 15 m). Le
+    // rattachement à la localisation est interne (resolveOrCreate ≤ 15 m, CDC
+    // Backend) ; en mock le store `/addresses` représente les adresses de
+    // l'utilisateur courant.
     const collision = addresses.find(
       (a) =>
         a.isActive &&
-        haversineMeters(a.gps.lat, a.gps.lng, input.gpsLat, input.gpsLng) < 3,
+        haversineMeters(a.gps.lat, a.gps.lng, input.gpsLat, input.gpsLng) <= 15,
     );
     if (collision) {
       throw new ApiError(
         409,
         'ADDRESS_ALREADY_EXISTS_AT_LOCATION',
-        'Une adresse existe déjà à cette position.',
+        'Vous avez déjà une adresse à cet endroit.',
         { address_code: collision.code },
       );
     }
@@ -982,11 +1010,27 @@ export const api = {
   publicAddress: (code: string) =>
     apiFetch<PublicAddress>(`/addresses/${code}`),
   myAddresses: () => apiFetch<OwnerAddress[]>('/addresses', { auth: 'jwt' }),
-  nearbyAddresses: (lat: number, lng: number, radiusM = 15) =>
-    apiFetch<PublicAddress[]>(
-      `/addresses/nearby?lat=${lat}&lng=${lng}&radius=${radiusM}`,
-      { auth: 'jwt' },
-    ),
+  // Repère connu le plus proche pour amorcer les instructions (point de
+  // départ). Tolérant : tout échec/timeout → `null`, jamais d'exception — le
+  // champ repère reste une saisie libre derrière le prompt, donc l'échec de la
+  // suggestion ne bloque jamais la création. Route INTERNE (hors /api/v1).
+  nearbyLandmark: async (
+    lat: number,
+    lng: number,
+  ): Promise<NearbyLandmark | null> => {
+    try {
+      const list = await apiFetch<NearbyLandmark[]>(
+        `/internal/nearby-landmark?lat=${lat}&lng=${lng}`,
+        { auth: 'jwt', internal: true, signal: AbortSignal.timeout(5000) },
+      );
+      if (!Array.isArray(list) || list.length === 0) return null;
+      return list.reduce((closest, l) =>
+        l.distanceM < closest.distanceM ? l : closest,
+      );
+    } catch {
+      return null;
+    }
+  },
   createAddress: (input: CreateAddressInput) =>
     apiFetch<CreatedAddress>('/addresses', { method: 'POST', body: input, auth: 'jwt' }),
   apiKeys: () => apiFetch<ApiKey[]>('/admin/api-keys', { auth: 'jwt' }),
@@ -1082,10 +1126,13 @@ export const api = {
       `/addresses/${encodeURIComponent(code)}/rating`,
       { method: 'PUT', body: { score } satisfies RatingUpsertInput, auth: 'jwt' },
     ),
+  // Lecture publique : les informations terrain approuvées sont affichées en
+  // lecture seule sur la vue publique `/a/:code` (CDC Frontend §549/753), donc
+  // accessibles sans compte. Le backend ne renvoie que les notes publiées.
   listFieldNotes: (code: string) =>
     apiFetch<{ items: FieldNote[] }>(
       `/addresses/${encodeURIComponent(code)}/field-notes`,
-      { auth: 'jwt' },
+      { auth: 'none' },
     ),
   createFieldNote: (code: string, body: CreateFieldNoteInput) =>
     apiFetch<FieldNote>(

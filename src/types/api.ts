@@ -196,14 +196,28 @@ export interface CreatedAddress {
 }
 
 export interface CreateAddressInput {
-  quartierId: string;
   /** Catégorie obligatoire à la création (CDC v5 §4). Backend rejette
       avec `CATEGORY_REQUIRED` (400) si absente. */
   category: AddressCategory;
   steps: string[];
+  /** Le quartier est dérivé du GPS côté backend (rattachement automatique,
+      CDC v5 §Besoin 1). L'habitant ne choisit jamais sa zone — aucun
+      `quartierId` n'est transmis. */
   gpsLat: number;
   gpsLng: number;
   photoUrl: string;
+}
+
+/** Repère connu avoisinant proposé comme point de départ des instructions
+    (CDC v5 §Besoin 1 + §Overpass). Servi par l'endpoint interne
+    `/internal/nearby-landmark` (hors contrat public `/api/v1/`). */
+export interface NearbyLandmark {
+  name: string;
+  category?: string;
+  lat: number;
+  lng: number;
+  /** Distance au point GPS de l'habitant, en mètres. */
+  distanceM: number;
 }
 
 export interface UpdateAddressInput {

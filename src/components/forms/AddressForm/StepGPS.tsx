@@ -2,18 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import {
-  AlertTriangle,
-  Check,
-  Crosshair,
-  Info,
-  Loader2,
-  RotateCw,
-} from 'lucide-react';
+import { Check, Crosshair, Info, Loader2, RotateCw } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { classNames, pointInPolygon } from '@/lib/utils';
-import type { GeoJsonPolygon } from '@/types/api';
+import { classNames } from '@/lib/utils';
 
 const MapPreview = dynamic(
   () => import('@/components/map/MapNavigator').then((m) => m.MapNavigator),
@@ -31,10 +23,6 @@ export interface StepGpsValue {
 export interface StepGpsProps {
   value: StepGpsValue | null;
   onComplete: (value: StepGpsValue) => void;
-  /** Nom du quartier choisi à Step 1, affiché dans l'alerte hors-quartier. */
-  quartierName?: string | null;
-  /** Polygone GeoJSON du quartier — la position acquise doit y tomber. */
-  quartierPolygon?: GeoJsonPolygon | null;
 }
 
 // Seuil de précision GPS au-dessus duquel on considère que la position
@@ -61,21 +49,13 @@ type UiState =
   | { kind: 'denied' }
   | { kind: 'unsupported' };
 
-export function StepGPS({
-  value,
-  onComplete,
-  quartierName,
-  quartierPolygon,
-}: StepGpsProps) {
+export function StepGPS({ value, onComplete }: StepGpsProps) {
   const [ui, setUi] = useState<UiState>(() =>
     value ? { kind: 'acquiring', reading: null, relaxed: true } : { kind: 'idle' },
   );
   const [manualLat, setManualLat] = useState(value ? String(value.lat) : '');
   const [manualLng, setManualLng] = useState(value ? String(value.lng) : '');
   const [manualError, setManualError] = useState<string | null>(null);
-  // Override "Je sais, je suis bien là" — on garde une validation manuelle
-  // possible quand le GPS pointe hors quartier mais que l'utilisateur insiste.
-  const [quartierOverride, setQuartierOverride] = useState(false);
 
   const watchIdRef = useRef<number | null>(null);
   const relaxTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -98,7 +78,6 @@ export function StepGPS({
     }
     stopWatch();
     setUi({ kind: 'acquiring', reading: null, relaxed: false });
-    setQuartierOverride(false);
 
     watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
@@ -185,15 +164,15 @@ export function StepGPS({
         </h2>
         <p className="text-sm text-text-muted">
           Placez-vous devant votre porte d&apos;entrée et restez immobile
-          quelques secondes — la précision s&apos;affine au fil du temps.
+          quelques secondes&nbsp;: la précision s&apos;affine au fil du temps.
         </p>
       </header>
 
       <div className="flex items-start gap-2.5 rounded-md bg-warning-light border border-warning/30 px-4 py-3">
         <Info className="h-4 w-4 text-warning shrink-0 mt-0.5" aria-hidden="true" />
         <p className="text-sm text-text-primary leading-relaxed">
-          Sortez du bâtiment et orientez-vous vers le ciel pour un meilleur
-          signal — le GPS converge généralement en 10 à 20 secondes.
+          Sortez du bâtiment pour mieux capter. Ça prend en général 10 à
+          20 secondes.
         </p>
       </div>
 
@@ -201,10 +180,6 @@ export function StepGPS({
         <AcquiringPanel
           reading={ui.reading}
           relaxed={ui.relaxed}
-          quartierName={quartierName}
-          quartierPolygon={quartierPolygon}
-          quartierOverride={quartierOverride}
-          onOverride={() => setQuartierOverride(true)}
           onValidate={handleValidate}
           onRestart={startWatch}
         />
@@ -242,10 +217,6 @@ export function StepGPS({
 interface AcquiringPanelProps {
   reading: GpsReading | null;
   relaxed: boolean;
-  quartierName?: string | null;
-  quartierPolygon?: GeoJsonPolygon | null;
-  quartierOverride: boolean;
-  onOverride: () => void;
   onValidate: (lat: number, lng: number) => void;
   onRestart: () => void;
 }
@@ -253,10 +224,6 @@ interface AcquiringPanelProps {
 function AcquiringPanel({
   reading,
   relaxed,
-  quartierName,
-  quartierPolygon,
-  quartierOverride,
-  onOverride,
   onValidate,
   onRestart,
 }: AcquiringPanelProps) {
@@ -264,10 +231,10 @@ function AcquiringPanel({
     return (
       <div className="flex flex-col items-center gap-3 py-8 text-text-muted">
         <Loader2 className="h-6 w-6 animate-spin text-primary" aria-hidden="true" />
-        <p className="text-sm">Acquisition du signal GPS…</p>
+        <p className="text-sm">Recherche de votre position…</p>
         <p className="text-xs text-center max-w-sm">
-          Patientez quelques secondes. Si rien n&apos;apparaît, vérifiez que
-          la géolocalisation est autorisée pour ce site.
+          Patientez quelques secondes. Si rien ne se passe, vérifiez que vous
+          avez autorisé la localisation pour ce site.
         </p>
       </div>
     );
@@ -275,47 +242,19 @@ function AcquiringPanel({
 
   const accuracy = Math.round(reading.accuracy);
   const isPrecise = accuracy <= ACCURACY_THRESHOLD_METERS;
-  // Si on a un polygone de quartier et que la position acquise est hors,
-  // on bloque sauf override explicite de l'utilisateur.
-  const inQuartier =
-    !quartierPolygon ||
-    !quartierPolygon.coordinates ||
-    pointInPolygon(reading.lat, reading.lng, quartierPolygon.coordinates);
-  const canValidate = (isPrecise || relaxed) && (inQuartier || quartierOverride);
+  const canValidate = isPrecise || relaxed;
 
   return (
     <div className="flex flex-col gap-3">
       <AccuracyBadge accuracy={accuracy} isPrecise={isPrecise} />
 
-      <div className="rounded-xl overflow-hidden border border-border-strong shadow-[0_4px_12px_rgba(0,0,0,0.05)]">
+      <div className="rounded-[var(--radius-lg)] overflow-hidden border border-border-strong shadow-md">
         <MapPreview destination={reading} interactive={false} />
       </div>
 
       <p className="text-center text-xs text-text-muted font-mono tracking-wide">
         {reading.lat.toFixed(5)}° N, {reading.lng.toFixed(5)}° E
       </p>
-
-      {!inQuartier && !quartierOverride ? (
-        <div className="flex items-start gap-2.5 rounded-md bg-danger-light border border-danger/30 px-4 py-3">
-          <AlertTriangle
-            className="h-4 w-4 text-danger shrink-0 mt-0.5"
-            aria-hidden="true"
-          />
-          <div className="flex-1 text-sm text-text-primary leading-relaxed">
-            <p>
-              Votre position semble être <strong>hors de {quartierName}</strong>.
-              Êtes-vous bien rentré(e) chez vous ?
-            </p>
-            <button
-              type="button"
-              onClick={onOverride}
-              className="mt-2 text-xs font-medium text-danger underline underline-offset-2 cursor-pointer"
-            >
-              Je suis bien à {quartierName}, valider quand même
-            </button>
-          </div>
-        </div>
-      ) : null}
 
       {!isPrecise && relaxed ? (
         <div className="flex items-start gap-2.5 rounded-md bg-warning-light border border-warning/30 px-4 py-3">
@@ -324,9 +263,8 @@ function AcquiringPanel({
             aria-hidden="true"
           />
           <p className="text-sm text-text-primary leading-relaxed">
-            Précision limitée à {accuracy} m. Vous pouvez valider quand même,
-            la photo de votre portail aidera à lever le doute pour les
-            visiteurs.
+            Position un peu approximative ({accuracy} m). Vous pouvez valider
+            quand même : votre photo aidera les visiteurs à trouver.
           </p>
         </div>
       ) : null}
@@ -391,7 +329,7 @@ function AccuracyBadge({
           )}
         />
         <span className="text-sm font-medium">
-          {isPrecise ? 'Précision suffisante' : 'Acquisition en cours…'}
+          {isPrecise ? 'Position trouvée' : 'Recherche en cours…'}
         </span>
       </div>
       <span className="text-sm font-display font-bold tabular-nums">

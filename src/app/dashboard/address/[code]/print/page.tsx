@@ -39,7 +39,7 @@ export default function PrintAddressPage({ params }: RouteParams) {
 
         <div className="flex flex-col items-center gap-2">
           <p
-            className="font-display font-bold tracking-[0.1em] text-display text-text-primary"
+            className="code-type font-black tracking-[0.08em] text-display text-text-primary"
             aria-label={`Code adresse ${code}`}
           >
             {code}
@@ -50,7 +50,7 @@ export default function PrintAddressPage({ params }: RouteParams) {
         </div>
 
         <p className="text-xs text-text-muted text-center max-w-xs">
-          Scannez ce QR code pour ouvrir l'adresse dans votre navigateur.
+          Scannez ce QR code pour ouvrir l’adresse dans votre navigateur.
         </p>
       </article>
     </main>

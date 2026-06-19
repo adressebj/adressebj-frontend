@@ -107,55 +107,101 @@ describe('AddressView', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('records the vote on a single star tap and shows the current score (upsert)', async () => {
+  it('records a high rating then thanks the visitor without asking for a contribution', async () => {
     const user = userEvent.setup();
-    // CDC §8 : l'évaluation est réservée aux Habitants authentifiés ; la
-    // note est un upsert (PUT /addresses/:code/rating) — pas de blocage
-    // côté frontend, l'utilisateur peut la modifier à tout moment.
+    // CDC §327 : à l'arrivée, le dialogue de retour est présenté EXPLICITEMENT
+    // (pas un bloc passif dans le défilement). Une note ≥ 4 remercie et clôt,
+    // sans proposer de contribution terrain.
     authenticate();
     renderAt('AKP-7X3K');
 
-    const fourStars = await screen.findByRole('radio', { name: /4 étoiles/i });
-    await user.click(fourStars);
+    await user.click(
+      await screen.findByRole('button', { name: /lancer la navigation/i }),
+    );
+    await user.click(screen.getByRole('button', { name: /^j[’']y suis$/i }));
 
-    // L'entête bascule sur l'état « note actuelle » dès que l'upsert revient.
-    await screen.findByRole('heading', {
-      name: /votre note actuelle\s*:\s*4\/5/i,
-    });
+    // Étape « note » du dialogue.
+    await user.click(await screen.findByRole('radio', { name: /4 étoiles/i }));
 
-    const fourth = screen.getByRole('radio', { name: /4 étoiles/i });
-    expect(fourth).toHaveAttribute('aria-checked', 'true');
+    // Note ≥ 4 → remerciement, et AUCUN formulaire de contribution.
+    await screen.findByRole('heading', { name: /merci/i });
+    expect(
+      screen.queryByLabelText(/votre observation terrain/i),
+    ).not.toBeInTheDocument();
   });
 
-  it('opens the contribution form on "J’y suis" and toasts on submit', async () => {
+  it('proposes the field-note form after a low rating and confirms on submit', async () => {
     const user = userEvent.setup();
-    // Cas d'usage : Soumettre une précision terrain <<include>> s'authentifier.
-    // Authenticate first so the post_arrivée contribution form opens.
+    // CDC §327 : note ≤ 3 → le formulaire de contribution terrain (texte libre)
+    // est enchaîné dans le même dialogue.
     authenticate();
     renderAt('AKP-7X3K');
 
-    const arrived = await screen.findByRole('button', { name: /^j[’']y suis$/i });
-    await user.click(arrived);
+    await user.click(
+      await screen.findByRole('button', { name: /lancer la navigation/i }),
+    );
+    await user.click(screen.getByRole('button', { name: /^j[’']y suis$/i }));
 
-    // Contribution form appeared.
-    const heading = await screen.findByRole('heading', {
-      name: /aidez les prochains visiteurs/i,
-    });
-    expect(heading).toBeInTheDocument();
+    // Note basse → bascule vers la contribution.
+    await user.click(await screen.findByRole('radio', { name: /2 étoiles/i }));
 
-    // Pick a direction so the validation doesn't fire the "info" toast.
-    const directionSelect = screen.getByLabelText(/sens de circulation/i);
-    await user.selectOptions(directionSelect, 'double-sens');
+    expect(
+      await screen.findByRole('heading', {
+        name: /aidez les prochains visiteurs/i,
+      }),
+    ).toBeInTheDocument();
 
+    const noteField = screen.getByLabelText(/votre observation terrain/i);
+    await user.type(noteField, 'Portail vert juste après la pharmacie.');
     await user.click(
       screen.getByRole('button', { name: /partager ma contribution/i }),
     );
 
-    await waitFor(() => {
-      expect(
-        screen.getByText(/merci pour votre contribution/i),
-      ).toBeInTheDocument();
-    });
+    // Étape de remerciement après envoi.
+    await screen.findByRole('heading', { name: /merci/i });
+  });
+
+  it('lets a visitor skip the rating and go straight to a field note', async () => {
+    const user = userEvent.setup();
+    authenticate();
+    renderAt('AKP-7X3K');
+
+    await user.click(
+      await screen.findByRole('button', { name: /lancer la navigation/i }),
+    );
+    await user.click(screen.getByRole('button', { name: /^j[’']y suis$/i }));
+
+    // « Je préfère ne pas noter » → contribution directement (CDC §327, branche
+    // « absence d'évaluation »).
+    await user.click(
+      await screen.findByRole('button', { name: /je préfère ne pas noter/i }),
+    );
+    expect(
+      await screen.findByRole('heading', {
+        name: /aidez les prochains visiteurs/i,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it('invites an anonymous visitor to sign in when they arrive', async () => {
+    const user = userEvent.setup();
+    renderAt('AKP-7X3K'); // non authentifié
+
+    await user.click(
+      await screen.findByRole('button', { name: /lancer la navigation/i }),
+    );
+    await user.click(screen.getByRole('button', { name: /^j[’']y suis$/i }));
+
+    // Dialogue d'invitation à se connecter — pas d'étoiles pour un anonyme.
+    expect(
+      await screen.findByRole('heading', { name: /vous êtes arrivé/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('radio', { name: /4 étoiles/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /se connecter/i }),
+    ).toBeInTheDocument();
   });
 
   it('shows the auth gate when an anonymous visitor taps "Signaler un problème"', async () => {
@@ -174,5 +220,37 @@ describe('AddressView', () => {
     expect(
       screen.queryByRole('heading', { name: /^signaler un problème$/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it('gates the journey: "J’y suis" appears only after navigation, rating only after arrival', async () => {
+    const user = userEvent.setup();
+    authenticate();
+    renderAt('AKP-7X3K');
+
+    // 1. État initial : pas de « J'y suis », pas d'étoiles (dialogue fermé).
+    await screen.findByRole('button', { name: /lancer la navigation/i });
+    expect(
+      screen.queryByRole('button', { name: /^j[’']y suis$/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('radio', { name: /4 étoiles/i }),
+    ).not.toBeInTheDocument();
+
+    // 2. Après « Lancer la navigation » : « J'y suis » apparaît, pas encore d'étoiles.
+    await user.click(
+      screen.getByRole('button', { name: /lancer la navigation/i }),
+    );
+    expect(
+      await screen.findByRole('button', { name: /^j[’']y suis$/i }),
+    ).toBeEnabled();
+    expect(
+      screen.queryByRole('radio', { name: /4 étoiles/i }),
+    ).not.toBeInTheDocument();
+
+    // 3. Après « J'y suis » : le dialogue de retour s'ouvre avec les étoiles.
+    await user.click(screen.getByRole('button', { name: /^j[’']y suis$/i }));
+    expect(
+      await screen.findByRole('radio', { name: /4 étoiles/i }),
+    ).toBeEnabled();
   });
 });

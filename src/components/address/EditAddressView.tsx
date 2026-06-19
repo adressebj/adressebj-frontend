@@ -150,7 +150,7 @@ export function EditAddressView({ code: rawCode }: EditAddressViewProps) {
         href={`/dashboard/address/${code}`}
         className="text-sm text-text-muted hover:text-text-primary inline-flex items-center gap-1 self-start"
       >
-        <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Vue propriétaire
+        <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Retour à l’adresse
       </Link>
 
       <header className="flex flex-col gap-3">
@@ -161,14 +161,14 @@ export function EditAddressView({ code: rawCode }: EditAddressViewProps) {
           <AddressCodeDisplay code={address.code} size="sm" showCopyButton={false} />
           <p className="text-xs text-text-muted inline-flex items-center gap-1.5">
             <Lock className="h-3 w-3" aria-hidden="true" /> Le code ne change
-            jamais — il reste l'identifiant permanent de votre porte.
+            jamais : c’est le nom unique de votre adresse.
           </p>
         </div>
       </header>
 
       <EditSection
         title="Photo du portail"
-        description="Remplacez la photo si votre portail a été repeint, déplacé ou si l'ancien cliché manque de netteté."
+        description="Changez la photo si votre entrée a changé, ou si l'ancienne n'est pas assez nette."
       >
         <StepPhoto
           value={{ photoUrl: address.photoUrl }}
@@ -192,7 +192,7 @@ export function EditAddressView({ code: rawCode }: EditAddressViewProps) {
 
       <EditSection
         title="Position GPS"
-        description="Recapturez la position depuis votre portail pour améliorer la précision."
+        description="Reprenez la position depuis votre porte pour plus de précision."
       >
         <StepGPS
           value={{ lat: address.gps.lat, lng: address.gps.lng }}
@@ -215,7 +215,7 @@ function EditSection({
   return (
     <section
       aria-labelledby={title}
-      className="bg-surface rounded-lg border border-border shadow-sm p-5 sm:p-6 flex flex-col gap-4"
+      className="card p-5 sm:p-6 flex flex-col gap-4"
     >
       <header className="flex flex-col gap-1">
         <h2 className="font-display font-bold text-h3 text-text-primary">

@@ -1,15 +1,23 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import Image from 'next/image';
+import { useCallback, useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { ChevronRight, Lock, Plus, RotateCw } from 'lucide-react';
+import { Lock, Plus, RotateCw } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { Skeleton } from '@/components/ui/Skeleton';
-import { AddressStatusBadge } from '@/components/address/AddressStatusBadge';
-import { CategoryBadge } from '@/components/address/CategoryBadge';
+import { OwnerAddressCard } from '@/components/dashboard/OwnerAddressCard';
+import { RegistreOverview } from '@/components/dashboard/RegistreOverview';
 import { ApiError, api } from '@/lib/api';
 import type { OwnerAddress } from '@/types/api';
+
+// Aperçu carte non interactif — Leaflet touche `window` à l'import.
+const RegistreMap = dynamic(
+  () => import('@/components/dashboard/RegistreMap').then((m) => m.RegistreMap),
+  {
+    ssr: false,
+    loading: () => <div className="h-full w-full skeleton-shimmer" />,
+  },
+);
 
 type ListState =
   | { kind: 'loading' }
@@ -17,11 +25,20 @@ type ListState =
   | { kind: 'suspended'; reason?: string | null }
   | { kind: 'error' };
 
+function greeting(): string {
+  const h = new Date().getHours();
+  if (h < 5) return 'Bonsoir';
+  if (h < 18) return 'Bonjour';
+  return 'Bonsoir';
+}
+
 export default function DashboardPage() {
   const [state, setState] = useState<ListState>({ kind: 'loading' });
 
-  const load = () => {
-    setState({ kind: 'loading' });
+  // Récupération sans reset synchrone du loading — l'état initial est déjà
+  // `loading`, donc l'effet n'a qu'à déclencher le fetch (les setState terminaux
+  // vivent dans `.then`/`.catch`, asynchrones).
+  const fetchAddresses = useCallback(() => {
     api
       .myAddresses()
       .then((addresses) => setState({ kind: 'ok', addresses }))
@@ -42,74 +59,98 @@ export default function DashboardPage() {
         }
         setState({ kind: 'error' });
       });
-  };
-
-  useEffect(() => {
-    load();
   }, []);
 
+  // Retry explicite : on repasse par l'état loading avant de refetcher.
+  const reload = useCallback(() => {
+    setState({ kind: 'loading' });
+    fetchAddresses();
+  }, [fetchAddresses]);
+
+  useEffect(() => {
+    fetchAddresses();
+  }, [fetchAddresses]);
+
+  // ── Compte suspendu — sortie de garde plein écran, pas de chrome registre. ──
+  if (state.kind === 'suspended') {
+    return (
+      <section className="mx-auto w-full max-w-2xl px-4 sm:px-6 py-10">
+        <div className="card p-6 sm:p-8 flex flex-col gap-3 animate-fade-up" role="alert">
+          <span
+            aria-hidden="true"
+            className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-danger-light text-danger ring-1 ring-danger/15 self-start"
+          >
+            <Lock className="h-6 w-6" />
+          </span>
+          <div>
+            <h1 className="font-display font-bold text-h3 text-text-primary">
+              Compte suspendu
+            </h1>
+            <p className="text-text-muted mt-1 leading-relaxed">
+              Un membre de notre équipe a suspendu votre compte. Pour l’instant,
+              vos adresses ne sont plus visibles et vous ne pouvez plus en créer
+              ni en modifier.
+              {state.reason ? (
+                <>
+                  <br />
+                  <span className="block mt-2 italic">« {state.reason} »</span>
+                </>
+              ) : null}
+            </p>
+            <p className="text-text-muted mt-3 text-sm">
+              Si vous pensez qu’il s’agit d’une erreur, écrivez-nous à{' '}
+              <a
+                href="mailto:support@adressebj.bj"
+                className="text-primary underline"
+              >
+                support@adressebj.bj
+              </a>
+              .
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  const pins =
+    state.kind === 'ok'
+      ? state.addresses.map((a) => ({
+          code: a.code,
+          lat: a.gps.lat,
+          lng: a.gps.lng,
+          category: a.category,
+        }))
+      : [];
+
   return (
-    <div className="relative min-h-full pb-8">
-      <section className="mx-auto w-full max-w-3xl px-4 sm:px-6 py-6 flex flex-col gap-5">
-        <h1 className="sr-only">Mes adresses</h1>
+    <div className="relative min-h-full pb-20 lg:pb-12">
+      <section className="mx-auto w-full max-w-5xl px-4 sm:px-6 py-6 lg:py-10 flex flex-col gap-7">
+        {/* ── En-tête éditorial ── */}
+        <header className="flex flex-col gap-1.5 animate-fade-up">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">
+            {greeting()}
+          </p>
+          <h1 className="font-display font-black text-h1 text-text-primary">
+            Votre registre d’adresses
+          </h1>
+          <p className="text-text-muted max-w-prose">
+            Toutes vos adresses au même endroit. Voyez lesquelles sont prêtes
+            et partagez-les facilement.
+          </p>
+        </header>
 
         {state.kind === 'loading' ? (
-          <ul className="flex flex-col gap-3" aria-label="Chargement des adresses">
-            {[0, 1, 2].map((i) => (
-              <li key={i} className="card p-4 flex items-center gap-4">
-                <Skeleton width={64} height={64} />
-                <div className="flex-1 flex flex-col gap-2">
-                  <Skeleton width={140} height={20} />
-                  <Skeleton width={200} height={14} />
-                  <Skeleton width={100} height={14} />
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : state.kind === 'suspended' ? (
-          <div className="card p-6 flex flex-col gap-3" role="alert">
-            <span
-              aria-hidden="true"
-              className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-danger-light text-danger ring-1 ring-danger/15 self-start"
-            >
-              <Lock className="h-6 w-6" />
-            </span>
-            <div>
-              <h2 className="font-display font-semibold text-h3 text-text-primary">
-                Compte suspendu
-              </h2>
-              <p className="text-text-muted mt-1 leading-relaxed">
-                Votre compte AdresseBJ a été désactivé par un modérateur.
-                Vos adresses ne sont plus consultables et vous ne pouvez plus
-                en créer ou en modifier.
-                {state.reason ? (
-                  <>
-                    <br />
-                    <span className="block mt-2 italic">« {state.reason} »</span>
-                  </>
-                ) : null}
-              </p>
-              <p className="text-text-muted mt-3 text-sm">
-                Pour contester cette décision, écrivez-nous à{' '}
-                <a
-                  href="mailto:support@adressebj.bj"
-                  className="text-primary underline"
-                >
-                  support@adressebj.bj
-                </a>
-                .
-              </p>
-            </div>
-          </div>
+          <LoadingRegistre />
         ) : state.kind === 'error' ? (
-          <div className="card p-5 flex flex-col gap-3">
+          <div className="card p-5 flex flex-col gap-3 animate-fade-up">
             <p className="text-text-primary">
-              Impossible de charger vos adresses pour l’instant.
+              On n’arrive pas à afficher vos adresses pour le moment.
             </p>
             <Button
               variant="primary"
               size="md"
-              onClick={load}
+              onClick={reload}
               leadingIcon={<RotateCw className="h-4 w-4" aria-hidden="true" />}
               className="self-start"
             >
@@ -117,95 +158,126 @@ export default function DashboardPage() {
             </Button>
           </div>
         ) : state.addresses.length === 0 ? (
-          <div className="card p-6 flex flex-col items-center text-center gap-4 animate-fade-up">
-            <span
-              aria-hidden="true"
-              className="relative flex h-16 w-16 items-center justify-center rounded-full bg-primary-surface text-primary ring-1 ring-primary/15"
-            >
-              <span className="absolute inset-0 rounded-full bg-primary/15 animate-soft-pulse" />
-              <Plus className="h-7 w-7 relative" />
-            </span>
-            <div>
-              <h2 className="font-display font-semibold text-h3 text-text-primary">
-                Vous n’avez pas encore d’adresse.
-              </h2>
-              <p className="text-text-muted mt-1">
-                Créez la vôtre en 5 minutes&nbsp;: portail, position GPS et
-                3 indications de chemin.
-              </p>
-            </div>
-            <Link href="/dashboard/address/new">
-              <Button
-                variant="primary"
-                size="md"
-                leadingIcon={<Plus className="h-4 w-4" aria-hidden="true" />}
-              >
-                Créer ma première adresse
-              </Button>
-            </Link>
-          </div>
+          <EmptyRegistre />
         ) : (
-          <ul className="flex flex-col gap-3" aria-label="Liste de mes adresses">
-            {state.addresses.map((address, idx) => (
-              <li
-                key={address.code}
-                className={`animate-fade-up stagger-${Math.min(idx + 1, 5)}`}
-              >
-                <Link
-                  href={`/dashboard/address/${address.code}`}
-                  aria-label={`Voir l'adresse ${address.code}`}
-                  className="card card-interactive p-4 flex items-center gap-4 group"
+          <>
+            <RegistreOverview
+              addresses={state.addresses}
+              className="animate-fade-up stagger-1"
+            />
+
+            {/* ── Signature carte — aperçu de tous vos pins ── */}
+            <div className="relative h-44 sm:h-52 overflow-hidden rounded-[var(--radius-lg)] border border-border shadow-sm animate-fade-up stagger-2">
+              <RegistreMap pins={pins} className="h-full w-full" />
+            </div>
+
+            {/* ── Collection ── */}
+            <ul
+              aria-label="Liste de mes adresses"
+              className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+            >
+              {state.addresses.map((address, idx) => (
+                <li
+                  key={address.code}
+                  className={`animate-fade-up stagger-${Math.min(idx + 1, 5)}`}
                 >
-                  <div className="relative w-20 h-16 bg-surface-muted shrink-0 overflow-hidden rounded-lg">
-                    <Image
-                      src={address.photoUrl}
-                      alt={`Portail ${address.code}`}
-                      fill
-                      sizes="80px"
-                      className="object-cover transition-transform duration-300 group-hover:scale-105"
-                      unoptimized
-                    />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-display font-semibold text-h3 text-text-primary">
-                      {address.code}
-                    </h3>
-                    <p className="text-base text-text-muted truncate">
-                      {address.quartier?.name ?? 'Quartier inconnu'}
-                    </p>
-                    <div className="mt-2 flex items-center gap-2 flex-wrap">
-                      <AddressStatusBadge status={address.status} />
-                      <CategoryBadge category={address.category} size="sm" />
-                    </div>
-                  </div>
-                  <ChevronRight
-                    className="h-5 w-5 text-text-muted shrink-0 transition-transform duration-200 group-hover:translate-x-1 group-hover:text-primary"
-                    aria-hidden="true"
-                  />
+                  <OwnerAddressCard address={address} />
+                </li>
+              ))}
+              <li className="animate-fade-up">
+                <Link
+                  href="/dashboard/address/new"
+                  className="group flex h-full min-h-[12rem] flex-col items-center justify-center gap-3 rounded-[var(--radius-lg)] border-2 border-dashed border-border-strong bg-surface-muted/40 p-6 text-center transition-colors hover:border-primary hover:bg-primary-surface/40 tap-press"
+                >
+                  <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-primary-surface text-primary ring-1 ring-primary/15 transition-transform group-hover:scale-110">
+                    <Plus className="h-6 w-6" aria-hidden="true" />
+                  </span>
+                  <span className="font-display font-semibold text-text-primary">
+                    Créer une adresse
+                  </span>
                 </Link>
               </li>
-            ))}
-          </ul>
+            </ul>
+          </>
         )}
       </section>
 
-      {state.kind === 'suspended' ? null : (
-        <Link
-          href="/dashboard/address/new"
-          aria-label="Créer une nouvelle adresse"
-          className="fixed z-40 bottom-6 right-4 md:right-6 inline-flex items-center justify-center h-14 w-14 rounded-full bg-primary text-text-inverse shadow-lg hover:bg-primary-hover hover:shadow-xl hover:scale-105 active:scale-95 transition-all duration-200 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/40 group"
+      {/* FAB mobile — sur desktop la carte fantôme de la grille suffit. */}
+      <Link
+        href="/dashboard/address/new"
+        aria-label="Créer une nouvelle adresse"
+        className="lg:hidden fixed z-40 bottom-6 right-4 inline-flex items-center justify-center h-14 w-14 rounded-full bg-primary text-text-inverse shadow-lg hover:bg-primary-hover hover:shadow-xl hover:scale-105 active:scale-95 transition-all duration-200 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/40 group"
+      >
+        <span
+          aria-hidden="true"
+          className="absolute inset-0 rounded-full bg-primary/40 blur-md animate-soft-pulse"
+        />
+        <Plus
+          className="h-6 w-6 relative transition-transform duration-200 group-hover:rotate-90"
+          aria-hidden="true"
+        />
+      </Link>
+    </div>
+  );
+}
+
+function LoadingRegistre() {
+  return (
+    <div className="flex flex-col gap-7" aria-label="Chargement des adresses" aria-busy="true">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="card p-4 flex flex-col gap-2">
+            <div className="h-4 w-4 rounded skeleton-shimmer" />
+            <div className="h-8 w-12 rounded skeleton-shimmer" />
+            <div className="h-3 w-16 rounded skeleton-shimmer" />
+          </div>
+        ))}
+      </div>
+      <div className="h-44 sm:h-52 rounded-[var(--radius-lg)] skeleton-shimmer" />
+      <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {[0, 1, 2].map((i) => (
+          <li key={i} className="card overflow-hidden">
+            <div className="aspect-[16/10] w-full skeleton-shimmer" />
+            <div className="flex flex-col gap-2 p-4">
+              <div className="h-6 w-28 rounded skeleton-shimmer" />
+              <div className="h-3 w-36 rounded skeleton-shimmer" />
+              <div className="h-3 w-24 rounded skeleton-shimmer" />
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function EmptyRegistre() {
+  return (
+    <div className="card p-8 sm:p-10 flex flex-col items-center text-center gap-4 animate-fade-up motif-paper">
+      <span
+        aria-hidden="true"
+        className="relative flex h-16 w-16 items-center justify-center rounded-full bg-primary-surface text-primary ring-1 ring-primary/15"
+      >
+        <span className="absolute inset-0 rounded-full bg-primary/15 animate-soft-pulse" />
+        <Plus className="h-7 w-7 relative" />
+      </span>
+      <div>
+        <h2 className="font-display font-bold text-h3 text-text-primary">
+          Vous n’avez pas encore d’adresse.
+        </h2>
+        <p className="text-text-muted mt-1 max-w-sm">
+          Créez la vôtre en quelques minutes. On vous accompagne à chaque étape,
+          c’est simple.
+        </p>
+      </div>
+      <Link href="/dashboard/address/new">
+        <Button
+          variant="primary"
+          size="md"
+          leadingIcon={<Plus className="h-4 w-4" aria-hidden="true" />}
         >
-          {/* Halo doux derrière le FAB pour le faire ressortir. */}
-          <span
-            aria-hidden="true"
-            className="absolute inset-0 rounded-full bg-primary/40 blur-md animate-soft-pulse"
-          />
-          <Plus
-            className="h-6 w-6 relative transition-transform duration-200 group-hover:rotate-90"
-            aria-hidden="true"
-          />
-        </Link>
-      )}
+          Créer ma première adresse
+        </Button>
+      </Link>
     </div>
   );
 }

@@ -82,8 +82,7 @@ export function StepQuartier({ value, onComplete }: StepQuartierProps) {
           Où se situe votre adresse&nbsp;?
         </h2>
         <p className="text-sm text-text-muted">
-          Sélectionnez le quartier ou l’arrondissement correspondant à la
-          nouvelle adresse.
+          Choisissez le quartier où se trouve votre adresse.
         </p>
       </header>
 
@@ -129,7 +128,7 @@ export function StepQuartier({ value, onComplete }: StepQuartierProps) {
                     'transition-all duration-200 active:scale-[0.98] cursor-pointer',
                     checked
                       ? 'bg-primary-surface border-2 border-primary shadow-sm'
-                      : 'bg-surface border border-border-strong shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)]',
+                      : 'bg-surface border border-border-strong shadow-sm hover:shadow-md',
                   )}
                 >
                   <span className="flex justify-between items-start w-full mb-2">

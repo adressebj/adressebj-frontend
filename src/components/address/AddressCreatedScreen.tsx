@@ -54,7 +54,7 @@ export function AddressCreatedScreen({
 
       <p
         aria-label={`Code de votre adresse : ${code}`}
-        className="font-display font-bold text-[36px] leading-[40px] text-primary tracking-wider animate-fade-up stagger-2"
+        className="code-type inline-flex items-center rounded-[var(--radius-lg)] border border-accent/40 bg-primary-surface px-6 py-3 text-3xl sm:text-4xl font-black text-primary animate-fade-up stagger-2"
       >
         {code}
       </p>
@@ -66,7 +66,7 @@ export function AddressCreatedScreen({
       </div>
 
       <p className="text-text-muted animate-fade-up stagger-4">
-        Votre adresse sera examinée par un modérateur sous 48h.
+        Un membre de notre équipe va la vérifier sous 48h.
       </p>
 
       <div className="w-full flex flex-col gap-3 pt-2">
