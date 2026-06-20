@@ -2,12 +2,15 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AddressForm } from '@/components/forms/AddressForm';
 import { ToastProvider } from '@/components/ui/Toast';
+import { api } from '@/lib/api';
+import type { NearbyLandmark } from '@/types/api';
 
-// Don't load Leaflet in jsdom (StepGPS's preview map + AddressView use it).
-jest.mock('@/components/map/MapNavigator', () => ({
+// Le shell immersif rend la carte-canvas (LocationCanvas) — pas de Leaflet en
+// jsdom (même raison que les autres cartes mockées ailleurs).
+jest.mock('@/components/forms/AddressForm/LocationCanvas', () => ({
   __esModule: true,
-  MapNavigator: () => <div data-testid="map-navigator" />,
-  default: () => <div data-testid="map-navigator" />,
+  LocationCanvas: () => <div data-testid="location-canvas" />,
+  default: () => <div data-testid="location-canvas" />,
 }));
 
 const push = jest.fn();
@@ -23,6 +26,21 @@ jest.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
+// Repère synthétique renvoyé par le spy quand on veut le cas « trouvé ».
+const FAKE_LANDMARK: NearbyLandmark = {
+  name: 'Pharmacie Les Potiers',
+  category: 'Pharmacie',
+  lat: 6.3705,
+  lng: 2.4252,
+  distanceM: 120,
+};
+
+// Coordonnées dans le polygone d'Akpakpa, loin des adresses seedées (création
+// sans collision 409).
+const AKP_COORDS = { lat: 6.369, lng: 2.43 };
+// Coordonnées exactes de la fixture AKP-7X3K → collision ≤ 15 m → 409.
+const DUPLICATE_COORDS = { lat: 6.3676, lng: 2.4252 };
+
 function renderForm() {
   return render(
     <ToastProvider>
@@ -33,16 +51,14 @@ function renderForm() {
 
 function mockGeolocation(
   result: 'success' | 'denied',
-  coords: { lat: number; lng: number } = { lat: 6.367, lng: 2.425 },
+  coords: { lat: number; lng: number } = AKP_COORDS,
+  accuracy = 10,
 ) {
-  // StepGPS uses watchPosition (continuous) + clearWatch ; on garde
-  // getCurrentPosition pour la rétrocompatibilité si d'autres composants
-  // l'invoquent dans la même session.
   const successPosition = {
     coords: {
       latitude: coords.lat,
       longitude: coords.lng,
-      accuracy: 10,
+      accuracy,
       altitude: null,
       altitudeAccuracy: null,
       heading: null,
@@ -64,25 +80,29 @@ function mockGeolocation(
     TIMEOUT: 3,
   } as GeolocationPositionError;
 
-  const watchPosition = jest.fn().mockImplementation(
-    (success: PositionCallback, error?: PositionErrorCallback) => {
-      if (result === 'success') {
-        success(successPosition);
-      } else {
-        error?.(errorPayload);
-      }
-      return 1; // watch ID
-    },
-  );
-  const getCurrentPosition = jest.fn().mockImplementation(
-    (success: PositionCallback, error?: PositionErrorCallback) => {
-      if (result === 'success') {
-        success(successPosition);
-      } else {
-        error?.(errorPayload);
-      }
-    },
-  );
+  const watchPosition = jest
+    .fn()
+    .mockImplementation(
+      (success: PositionCallback, error?: PositionErrorCallback) => {
+        if (result === 'success') {
+          success(successPosition);
+        } else {
+          error?.(errorPayload);
+        }
+        return 1; // watch ID
+      },
+    );
+  const getCurrentPosition = jest
+    .fn()
+    .mockImplementation(
+      (success: PositionCallback, error?: PositionErrorCallback) => {
+        if (result === 'success') {
+          success(successPosition);
+        } else {
+          error?.(errorPayload);
+        }
+      },
+    );
   const clearWatch = jest.fn();
   Object.defineProperty(navigator, 'geolocation', {
     configurable: true,
@@ -91,52 +111,57 @@ function mockGeolocation(
   return watchPosition;
 }
 
-async function completeQuartier(user: ReturnType<typeof userEvent.setup>) {
-  await screen.findByRole('radio', { name: /akpakpa/i });
-  await user.click(screen.getByRole('radio', { name: /akpakpa/i }));
-  await user.click(screen.getByRole('button', { name: /continuer/i }));
+// Étape 1 (GPS) → validation → on arrive sur l'étape Instructions.
+async function completeGps(user: ReturnType<typeof userEvent.setup>) {
+  await screen.findByText(/° N,/i);
+  await user.click(
+    screen.getByRole('button', { name: /je suis devant ma porte/i }),
+  );
 }
 
 describe('AddressForm', () => {
   beforeEach(() => {
     push.mockClear();
   });
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
 
-  it('navigates through all 5 steps and shows the success screen with the created code', async () => {
+  it('détecte un repère, le confirme, puis crée l’adresse (succès)', async () => {
+    jest.spyOn(api, 'nearbyLandmark').mockResolvedValue(FAKE_LANDMARK);
     const user = userEvent.setup();
-    mockGeolocation('success', { lat: 6.367, lng: 2.425 });
+    mockGeolocation('success', AKP_COORDS);
     renderForm();
 
-    // Step 1 — Quartier.
-    await completeQuartier(user);
+    // Étape 1 — GPS.
+    await completeGps(user);
 
-    // Step 2 — GPS (granted automatically, 10 m accuracy → seuil atteint).
-    await screen.findByText(/6\.36700° N/i);
-    await user.click(
-      screen.getByRole('button', { name: /je suis devant ma porte/i }),
-    );
+    // Étape 2 — confirmation du repère détecté.
+    await screen.findByText(/un repère pour démarrer/i, undefined, {
+      timeout: 5000,
+    });
+    expect(screen.getByText(/pharmacie les potiers/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /oui, je pars de là/i }));
 
-    // Step 3 — Instructions: fill the 3 prompts.
-    const inputs = await screen.findAllByLabelText(
-      /depuis quel repère|quelle direction|reconnaître le lieu/i,
+    // Éditeur « guidé » : le départ est verrouillé ; on remplit une indication
+    // de trajet (milieu) puis le repère visuel d'arrivée (toujours en dernier).
+    const middleField = await screen.findByLabelText(
+      /que faut-il faire ensuite/i,
     );
-    expect(inputs).toHaveLength(3);
-    await user.type(inputs[0], 'Partir du marché Dantokpa');
-    await user.type(inputs[1], '2ème rue à droite');
-    await user.type(inputs[2], 'Portail bleu étoile jaune');
+    const arrivalField = screen.getByLabelText(/reconnaît-on l.endroit/i);
+    await user.type(middleField, 'Tourner à droite après l’école');
+    await user.type(arrivalField, 'Portail bleu, grand manguier');
     await user.click(screen.getByRole('button', { name: /^continuer$/i }));
 
-    // Step 4 — Catégorie : choisir Domicile.
+    // Étape 3 — catégorie.
     await user.click(await screen.findByRole('radio', { name: /^domicile$/i }));
     await user.click(screen.getByRole('button', { name: /^continuer$/i }));
 
-    // Step 5 — Photo: upload a fake file, then submit.
+    // Étape 4 — photo.
     const fileInput = screen.getByLabelText(/sélectionnez une photo/i);
     const file = new File(['x'], 'portail.jpg', { type: 'image/jpeg' });
     await user.upload(fileInput as HTMLInputElement, file);
-
     await user.click(screen.getByRole('button', { name: /uploader la photo/i }));
-    // The mock cloudinary helper resolves in ~1.5s.
     await waitFor(
       () => {
         expect(
@@ -145,86 +170,165 @@ describe('AddressForm', () => {
       },
       { timeout: 5000 },
     );
-
     await user.click(screen.getByRole('button', { name: /créer mon adresse/i }));
 
-    // Created screen.
-    const screenSection = await screen.findByRole('status', undefined, { timeout: 5000 });
-    expect(
-      within(screenSection).getByText(/adresse créée/i),
-    ).toBeInTheDocument();
-    // Code generated by the mock follows AKP-XXXX.
-    const codeNode = within(screenSection).getByLabelText(/code de votre adresse/i);
+    // Écran de succès.
+    const section = await screen.findByRole('status', undefined, { timeout: 5000 });
+    expect(within(section).getByText(/adresse créée/i)).toBeInTheDocument();
+    expect(within(section).getByText(/en attente de validation/i)).toBeInTheDocument();
+    const codeNode = within(section).getByLabelText(/code de votre adresse/i);
     expect(codeNode.textContent).toMatch(/^AKP-[A-Z0-9]{4}$/);
   }, 20000);
 
-  it('interrupts with the duplicate interstitial when an address sits within 15 m, then lets the user create anyway', async () => {
+  it('bascule en saisie libre quand aucun repère n’est détecté', async () => {
+    jest.spyOn(api, 'nearbyLandmark').mockResolvedValue(null);
     const user = userEvent.setup();
-    // Coords identical to the AKP-7X3K fixture → distance 0 m → duplicate.
-    mockGeolocation('success', { lat: 6.3676, lng: 2.4252 });
+    mockGeolocation('success', AKP_COORDS);
     renderForm();
 
-    await completeQuartier(user);
+    await completeGps(user);
 
-    // Step 2 — GPS captured; validate triggers the proximity check.
-    await screen.findByText(/6\.36760° N/i);
-    await user.click(
-      screen.getByRole('button', { name: /je suis devant ma porte/i }),
-    );
-
-    // Interstitial appears with the nearby address + attach affordance.
-    await screen.findByText(/des adresses existent près de vous/i, undefined, {
+    await screen.findByText(/aucun repère connu détecté/i, undefined, {
       timeout: 5000,
     });
     expect(
-      screen.getByRole('button', { name: /se rattacher/i }),
+      screen.getByLabelText(/repère connu voulez-vous indiquer/i),
     ).toBeInTheDocument();
-
-    // "Créer quand même" proceeds to the instructions step.
-    await user.click(
-      screen.getByRole('button', { name: /créer quand même/i }),
-    );
-    const inputs = await screen.findAllByLabelText(
-      /depuis quel repère|quelle direction|reconnaître le lieu/i,
-    );
-    expect(inputs).toHaveLength(3);
   }, 20000);
 
-  it('keeps the "Continuer" button disabled while fewer than 2 instruction steps are filled', async () => {
+  it('laisse rejeter le repère détecté pour saisir le sien', async () => {
+    jest.spyOn(api, 'nearbyLandmark').mockResolvedValue(FAKE_LANDMARK);
     const user = userEvent.setup();
-    mockGeolocation('success');
+    mockGeolocation('success', AKP_COORDS);
     renderForm();
 
-    await completeQuartier(user);
-    await screen.findByText(/° N,/i);
+    await completeGps(user);
+    await screen.findByText(/un repère pour démarrer/i, undefined, {
+      timeout: 5000,
+    });
     await user.click(
-      screen.getByRole('button', { name: /je suis devant ma porte/i }),
+      screen.getByRole('button', { name: /non, ce n.est pas le bon/i }),
     );
 
-    // On step 3 — the submit button starts disabled (0/2).
-    const submit = await screen.findByRole('button', { name: /minimum 2 étapes/i });
-    expect(submit).toBeDisabled();
-
-    // One filled — still disabled (1/2).
-    const inputs = await screen.findAllByLabelText(
-      /depuis quel repère|quelle direction|reconnaître le lieu/i,
-    );
-    await user.type(inputs[0], 'Une étape');
     expect(
-      screen.getByRole('button', { name: /minimum 2 étapes/i }),
+      screen.getByLabelText(/repère connu voulez-vous indiquer/i),
+    ).toBeInTheDocument();
+  }, 20000);
+
+  it('exige le premier (départ) et le dernier (arrivée) champ', async () => {
+    jest.spyOn(api, 'nearbyLandmark').mockResolvedValue(null);
+    const user = userEvent.setup();
+    mockGeolocation('success', AKP_COORDS);
+    renderForm();
+
+    await completeGps(user);
+    await screen.findByText(/aucun repère connu détecté/i, undefined, {
+      timeout: 5000,
+    });
+
+    // Rien de rempli → désactivé, on réclame d'abord le départ.
+    expect(
+      await screen.findByRole('button', {
+        name: /indiquez le point de départ/i,
+      }),
     ).toBeDisabled();
 
-    // Two filled — enabled, label flips to "Continuer".
-    await user.type(inputs[1], 'Deuxième étape');
-    expect(screen.getByRole('button', { name: /^continuer$/i })).toBeEnabled();
-  });
+    // Départ seul → toujours désactivé : l'arrivée reste obligatoire.
+    await user.type(
+      screen.getByLabelText(/repère connu voulez-vous indiquer/i),
+      'Marché Dantokpa',
+    );
+    expect(
+      screen.getByRole('button', { name: /indiquez le repère d.arrivée/i }),
+    ).toBeDisabled();
 
-  it('shows the manual lat/lng form when geolocation is denied', async () => {
-    mockGeolocation('denied');
+    // Une étape de milieu reste optionnelle : elle ne débloque rien.
+    await user.type(
+      screen.getByLabelText(/que faut-il faire ensuite/i),
+      'Tourner à droite',
+    );
+    expect(
+      screen.getByRole('button', { name: /indiquez le repère d.arrivée/i }),
+    ).toBeDisabled();
+
+    // Départ + arrivée renseignés → activé.
+    await user.type(
+      screen.getByLabelText(/reconnaît-on l.endroit/i),
+      'Portail bleu',
+    );
+    expect(screen.getByRole('button', { name: /^continuer$/i })).toBeEnabled();
+  }, 20000);
+
+  it('conserve les étapes saisies et ajoutées quand on revient en arrière', async () => {
+    jest.spyOn(api, 'nearbyLandmark').mockResolvedValue(null);
     const user = userEvent.setup();
+    mockGeolocation('success', AKP_COORDS);
     renderForm();
 
-    await completeQuartier(user);
+    await completeGps(user);
+    await screen.findByText(/aucun repère connu détecté/i, undefined, {
+      timeout: 5000,
+    });
+
+    await user.type(
+      screen.getByLabelText(/repère connu voulez-vous indiquer/i),
+      'Marché Dantokpa',
+    );
+    // Remplit l'étape de milieu par défaut, puis en ajoute une seconde.
+    await user.type(
+      screen.getByLabelText(/que faut-il faire ensuite/i),
+      'Tourner à droite',
+    );
+    await user.click(screen.getByRole('button', { name: /ajouter une étape/i }));
+    const middles = screen.getAllByLabelText(/que faut-il faire ensuite/i);
+    expect(middles).toHaveLength(2);
+    await user.type(middles[1], 'Continuer sur 100 m');
+    await user.type(
+      screen.getByLabelText(/reconnaît-on l.endroit/i),
+      'Portail bleu',
+    );
+    await user.click(screen.getByRole('button', { name: /^continuer$/i }));
+
+    // On a bien avancé (étape catégorie), puis on revient en arrière.
+    await screen.findByRole('radio', { name: /^domicile$/i });
+    await user.click(screen.getByRole('button', { name: /retour/i }));
+
+    // Tous les champs précédemment remplis / ajoutés sont rétablis.
+    expect(
+      await screen.findByLabelText(/repère connu voulez-vous indiquer/i),
+    ).toHaveValue('Marché Dantokpa');
+    const restored = screen.getAllByLabelText(/que faut-il faire ensuite/i);
+    expect(restored).toHaveLength(2);
+    expect(restored[0]).toHaveValue('Tourner à droite');
+    expect(restored[1]).toHaveValue('Continuer sur 100 m');
+    expect(screen.getByLabelText(/reconnaît-on l.endroit/i)).toHaveValue(
+      'Portail bleu',
+    );
+  }, 20000);
+
+  it('refuse de valider une position trop imprécise et bascule en saisie manuelle', async () => {
+    const user = userEvent.setup();
+    // Précision de type géoloc IP (centaines de km) → au-dessus du plafond dur.
+    mockGeolocation('success', AKP_COORDS, 230_913);
+    renderForm();
+
+    await screen.findByText(/position non fiable/i);
+    // Pas de validation « devant ma porte » : l'option est retirée.
+    expect(
+      screen.queryByRole('button', { name: /je suis devant ma porte/i }),
+    ).not.toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole('button', { name: /saisir mes coordonnées/i }),
+    );
+
+    expect(screen.getByLabelText(/^latitude$/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^longitude$/i)).toBeInTheDocument();
+  }, 20000);
+
+  it('affiche le formulaire manuel lat/lng quand la géolocalisation est refusée', async () => {
+    mockGeolocation('denied');
+    renderForm();
 
     await screen.findByText(/nous n’avons pas pu accéder à votre position/i);
     expect(screen.getByLabelText(/^latitude$/i)).toBeInTheDocument();
@@ -234,14 +338,12 @@ describe('AddressForm', () => {
     ).toBeInTheDocument();
   });
 
-  it('rejects non-numeric manual coordinates with an inline error', async () => {
+  it('rejette des coordonnées manuelles non numériques', async () => {
     mockGeolocation('denied');
     const user = userEvent.setup();
     renderForm();
 
-    await completeQuartier(user);
     await screen.findByText(/nous n’avons pas pu accéder/i);
-
     await user.type(screen.getByLabelText(/^latitude$/i), 'abc');
     await user.type(screen.getByLabelText(/^longitude$/i), '!!');
     await user.click(screen.getByRole('button', { name: /valider manuellement/i }));
@@ -249,20 +351,75 @@ describe('AddressForm', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/nombres décimaux/i);
   });
 
-  it('lets the user step back to a previous step', async () => {
-    mockGeolocation('success');
+  it('permet de revenir à l’étape GPS', async () => {
+    jest.spyOn(api, 'nearbyLandmark').mockResolvedValue(null);
     const user = userEvent.setup();
+    mockGeolocation('success', AKP_COORDS);
     renderForm();
 
-    await completeQuartier(user);
-    await screen.findByText(/° N,/i);
+    await completeGps(user);
+    await screen.findByText(/aucun repère connu détecté/i, undefined, {
+      timeout: 5000,
+    });
 
-    // From step 2, the header back button ("Retour") returns to step 1.
     await user.click(screen.getByRole('button', { name: /^retour$/i }));
 
-    // Back on step 1 — the Akpakpa radio is rendered again.
+    // De retour sur l'étape GPS : la position préremplie réaffiche la validation.
     expect(
-      await screen.findByRole('radio', { name: /akpakpa/i }),
+      await screen.findByRole('button', { name: /je suis devant ma porte/i }),
     ).toBeInTheDocument();
-  });
+  }, 20000);
+
+  it('affiche l’écran « déjà une adresse ici » sur un doublon (409)', async () => {
+    jest.spyOn(api, 'nearbyLandmark').mockResolvedValue(null);
+    const user = userEvent.setup();
+    mockGeolocation('success', DUPLICATE_COORDS);
+    renderForm();
+
+    await completeGps(user);
+    await screen.findByText(/aucun repère connu détecté/i, undefined, {
+      timeout: 5000,
+    });
+
+    await user.type(
+      screen.getByLabelText(/repère connu voulez-vous indiquer/i),
+      'Marché Dantokpa',
+    );
+    await user.type(
+      screen.getByLabelText(/que faut-il faire ensuite/i),
+      'Tourner à droite',
+    );
+    await user.type(
+      screen.getByLabelText(/reconnaît-on l.endroit/i),
+      'Portail bleu',
+    );
+    await user.click(screen.getByRole('button', { name: /^continuer$/i }));
+
+    await user.click(await screen.findByRole('radio', { name: /^domicile$/i }));
+    await user.click(screen.getByRole('button', { name: /^continuer$/i }));
+
+    const fileInput = screen.getByLabelText(/sélectionnez une photo/i);
+    await user.upload(
+      fileInput as HTMLInputElement,
+      new File(['x'], 'p.jpg', { type: 'image/jpeg' }),
+    );
+    await user.click(screen.getByRole('button', { name: /uploader la photo/i }));
+    await waitFor(
+      () => {
+        expect(
+          screen.queryByRole('button', { name: /upload en cours/i }),
+        ).not.toBeInTheDocument();
+      },
+      { timeout: 5000 },
+    );
+    await user.click(screen.getByRole('button', { name: /créer mon adresse/i }));
+
+    // Écran 409 conforme.
+    await screen.findByText(/vous avez déjà une adresse à cet endroit/i, undefined, {
+      timeout: 5000,
+    });
+    expect(
+      screen.getByRole('link', { name: /voir \/ modifier cette adresse/i }),
+    ).toBeInTheDocument();
+  }, 20000);
 });

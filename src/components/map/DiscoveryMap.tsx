@@ -55,9 +55,15 @@ const TILE_SUBDOMAINS = 'abcd';
 // HTML des marqueurs — classés (`.abj-*` dans globals.css) pour piloter
 // hover/actif en CSS, et SVG inline pour ne pas dépendre des PNG par défaut de
 // Leaflet (qui 404 sur les sous-routes Next).
-function coloredMarkerHtml(iconSvg: string, fresh: boolean): string {
+function coloredMarkerHtml(
+  iconSvg: string,
+  fresh: boolean,
+  color: string,
+): string {
+  // `--pin-color` colore la goutte selon la catégorie (cf. `.abj-pin__drop`
+  // dans globals.css) ; l'état actif (or) reste piloté par `.is-active`.
   return `
-    <div class="abj-pin${fresh ? ' animate-pin-appear' : ''}">
+    <div class="abj-pin${fresh ? ' animate-pin-appear' : ''}" style="--pin-color: ${color}">
       <div class="abj-pin__drop"></div>
       <div class="abj-pin__icon">${iconSvg}</div>
     </div>
@@ -337,7 +343,7 @@ export function DiscoveryMap({
         // Marqueur en clair — goutte verte + icône catégorie + popup aperçu.
         const svg = CATEGORY_SVG[item.category] ?? CATEGORY_SVG.AUTRE;
         const icon = L.divIcon({
-          html: coloredMarkerHtml(svg, true),
+          html: coloredMarkerHtml(svg, true, CATEGORIES[item.category].color),
           className: '',
           iconSize: [34, 34],
           iconAnchor: [17, 34],

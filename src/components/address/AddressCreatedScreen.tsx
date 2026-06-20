@@ -1,21 +1,15 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { CheckCircle2, MessageCircle, QrCode } from 'lucide-react';
+import { CheckCircle2, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 
 export interface AddressCreatedScreenProps {
   code: string;
-  shareUrl: string;
-  whatsappUrl: string;
 }
 
-export function AddressCreatedScreen({
-  code,
-  shareUrl,
-  whatsappUrl,
-}: AddressCreatedScreenProps) {
+export function AddressCreatedScreen({ code }: AddressCreatedScreenProps) {
   const router = useRouter();
 
   return (
@@ -25,8 +19,7 @@ export function AddressCreatedScreen({
       className="mx-auto w-full max-w-md flex flex-col items-center text-center gap-5 py-6"
     >
       {/* Petit burst de célébration : 2 anneaux concentriques expansent
-         derrière le check, puis se dissipent. L'icône reste statique en
-         relief sur le succès. */}
+         derrière le check, puis se dissipent. */}
       <div className="relative flex h-20 w-20 items-center justify-center animate-fade-up">
         <span
           aria-hidden="true"
@@ -66,7 +59,8 @@ export function AddressCreatedScreen({
       </div>
 
       <p className="text-text-muted animate-fade-up stagger-4">
-        Un membre de notre équipe va la vérifier sous 48h.
+        Votre adresse est en cours de validation. Vous serez notifié dès sa
+        publication&nbsp;; vos liens seront actifs à ce moment-là.
       </p>
 
       <div className="w-full flex flex-col gap-3 pt-2">
@@ -74,19 +68,10 @@ export function AddressCreatedScreen({
           variant="primary"
           size="lg"
           fullWidth
-          onClick={() => window.open(whatsappUrl, '_blank', 'noopener,noreferrer')}
-          leadingIcon={<MessageCircle className="h-5 w-5" aria-hidden="true" />}
+          onClick={() => router.push(`/dashboard/address/${code}`)}
+          leadingIcon={<Eye className="h-5 w-5" aria-hidden="true" />}
         >
-          Partager via WhatsApp
-        </Button>
-        <Button
-          variant="secondary"
-          size="lg"
-          fullWidth
-          onClick={() => router.push(`/dashboard/address/${code}/share`)}
-          leadingIcon={<QrCode className="h-5 w-5" aria-hidden="true" />}
-        >
-          Afficher le QR Code
+          Voir mon adresse
         </Button>
         <Button
           variant="ghost"
@@ -97,8 +82,6 @@ export function AddressCreatedScreen({
           Retour à mes adresses
         </Button>
       </div>
-
-      <p className="sr-only">{shareUrl}</p>
     </section>
   );
 }

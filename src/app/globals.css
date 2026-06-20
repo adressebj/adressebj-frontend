@@ -168,7 +168,9 @@
 .abj-pin__drop {
   position: absolute;
   inset: 0;
-  background: var(--color-primary);
+  /* `--pin-color` permet de teinter la goutte par catégorie (DiscoveryMap) ;
+     défaut = vert primary pour les pins à destination unique (fiche, registre). */
+  background: var(--pin-color, var(--color-primary));
   border-radius: 50% 50% 50% 0;
   transform: rotate(-45deg);
   border: 3px solid #fff;

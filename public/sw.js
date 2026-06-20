@@ -1,5 +1,5 @@
-const CACHE_NAME = 'adressebj-v1';
-const ADDRESS_CACHE = 'adressebj-addresses-v1';
+const CACHE_NAME = 'adressebj-v2';
+const ADDRESS_CACHE = 'adressebj-addresses-v2';
 const MAX_CACHED_ADDRESSES = 10;
 const PRECACHE_URLS = ['/', '/offline.html'];
 
@@ -33,19 +33,26 @@ async function trimAddressCache() {
   }
 }
 
-async function staleWhileRevalidate(request) {
+// « Network-first » pour les pages d'adresse `/a/:code` : en ligne, on sert
+// TOUJOURS la version fraîche du réseau (et on rafraîchit le cache), car les
+// instructions d'une adresse peuvent être corrigées — servir une version
+// périmée enverrait un visiteur au mauvais endroit. Le cache ne sert que de
+// repli hors-ligne (un visiteur qui a déjà ouvert l'adresse la retrouve sans
+// réseau). C'était auparavant du « stale-while-revalidate », qui affichait
+// d'abord l'ancienne version mise en cache — d'où des mises en page périmées.
+async function networkFirst(request) {
   const cache = await caches.open(ADDRESS_CACHE);
-  const cached = await cache.match(request);
-  const networkPromise = fetch(request)
-    .then(async (response) => {
-      if (response && response.ok) {
-        await cache.put(request, response.clone());
-        await trimAddressCache();
-      }
-      return response;
-    })
-    .catch(() => cached);
-  return cached || networkPromise;
+  try {
+    const response = await fetch(request);
+    if (response && response.ok) {
+      await cache.put(request, response.clone());
+      await trimAddressCache();
+    }
+    return response;
+  } catch {
+    const cached = await cache.match(request);
+    return cached || caches.match('/offline.html');
+  }
 }
 
 self.addEventListener('fetch', (event) => {
@@ -63,7 +70,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (url.pathname.startsWith('/a/')) {
-    event.respondWith(staleWhileRevalidate(request));
+    event.respondWith(networkFirst(request));
     return;
   }
 

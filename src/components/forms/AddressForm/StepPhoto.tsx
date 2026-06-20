@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Camera, Lightbulb, RotateCw, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { uploadPortalPhoto } from '@/lib/cloudinary';
+import { StepHeading } from './StepHeading';
+import { StepNote } from './StepNote';
 
 export interface StepPhotoValue {
   photoUrl: string;
@@ -84,15 +86,10 @@ export function StepPhoto({
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-      <header className="flex flex-col gap-1">
-        <h2 className="font-display font-semibold text-h3 text-text-primary">
-          Photo de l’entrée
-        </h2>
-        <p className="text-sm text-text-muted">
-          Dernière étape&nbsp;! Une photo nette de votre entrée, pour qu’on la
-          reconnaisse facilement.
-        </p>
-      </header>
+      <StepHeading
+        title="Photo de l’entrée"
+        subtitle="Dernière étape ! Une photo nette de votre entrée, pour qu’on la reconnaisse facilement."
+      />
 
       <input
         ref={fileInputRef}
@@ -106,7 +103,7 @@ export function StepPhoto({
 
       <div className="flex flex-col gap-3">
         {displaySrc ? (
-          <div className="relative w-full h-64 bg-surface-muted overflow-hidden rounded-md border border-dashed border-border">
+          <div className="relative w-full h-64 bg-surface-muted overflow-hidden rounded-[var(--radius-lg)] border border-border-strong shadow-sm">
             {/* Plain <img> on purpose — next/image rejects blob: URLs that
                 URL.createObjectURL produces, leaving the preview empty. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -120,11 +117,12 @@ export function StepPhoto({
           <button
             type="button"
             onClick={handlePick}
-            className="group w-full aspect-video flex flex-col items-center justify-center gap-4 p-6 bg-surface-muted border-2 border-dashed border-border-strong rounded-xl text-text-muted hover:border-primary transition-colors cursor-pointer"
+            className="group w-full aspect-video flex flex-col items-center justify-center gap-4 p-6 bg-surface-muted border-2 border-dashed border-border-strong rounded-[var(--radius-lg)] text-text-muted hover:border-primary transition-colors cursor-pointer"
           >
-            <span className="flex h-16 w-16 items-center justify-center rounded-full bg-surface shadow-sm text-primary group-hover:scale-105 transition-transform duration-300">
-              <Camera className="h-8 w-8" aria-hidden="true" />
-            </span>
+            <Camera
+              className="h-9 w-9 text-primary group-hover:scale-105 transition-transform duration-300"
+              aria-hidden="true"
+            />
             <span className="flex flex-col items-center text-center gap-1">
               <span className="text-base font-semibold text-text-primary">
                 Prendre une photo ou choisir dans la galerie
@@ -150,14 +148,11 @@ export function StepPhoto({
       </div>
 
       {/* Conseil cadrage */}
-      <div className="flex items-start gap-2.5 rounded-md bg-primary-surface border border-primary/20 px-4 py-3">
-        <Lightbulb className="h-4 w-4 text-primary shrink-0 mt-0.5" aria-hidden="true" />
-        <p className="text-sm text-text-primary leading-relaxed">
-          <span className="font-semibold">Conseil&nbsp;:</span> prenez une photo
-          claire de l’entrée principale, vue depuis la rue. Assurez-vous que la
-          luminosité soit suffisante.
-        </p>
-      </div>
+      <StepNote variant="primary" icon={Lightbulb}>
+        <span className="font-semibold">Conseil&nbsp;:</span> prenez une photo
+        claire de l’entrée principale, vue depuis la rue. Assurez-vous que la
+        luminosité soit suffisante.
+      </StepNote>
 
       {error ? (
         <p role="alert" className="text-sm text-danger">

@@ -24,18 +24,36 @@ export type Category = AddressCategory;
 export interface CategoryMeta {
   label: string;
   icon: LucideIcon;
+  /**
+   * Couleur d'identité de la catégorie (hex). Sert partout : icône mise en
+   * avant sur la fiche/la sélection, teinte du badge, couleur du marqueur sur
+   * la carte, accent du filtre. Palette désaturée et accordée à la marque
+   * (assez sombre pour rester lisible sur fond papier comme sur fond blanc),
+   * pensée pour différencier les huit catégories d'un coup d'œil sans virer à
+   * l'arc-en-ciel criard. `DOMICILE` reprend le vert primary de la marque.
+   */
+  color: string;
 }
 
 export const CATEGORIES: Record<Category, CategoryMeta> = {
-  DOMICILE:       { label: 'Domicile',                       icon: Home },
-  COMMERCE:       { label: 'Commerce',                       icon: Store },
-  RESTAURATION:   { label: 'Restauration',                   icon: UtensilsCrossed },
-  SANTE:          { label: 'Santé',                          icon: Cross },
-  EDUCATION:      { label: 'Éducation',                      icon: GraduationCap },
-  ADMINISTRATION: { label: 'Administration / service public', icon: Landmark },
-  LOISIR:         { label: 'Loisir',                          icon: Music },
-  AUTRE:          { label: 'Autre',                           icon: MapPin },
+  DOMICILE:       { label: 'Domicile',                       icon: Home,            color: '#0E6B43' },
+  COMMERCE:       { label: 'Commerce',                       icon: Store,           color: '#3A5BA0' },
+  RESTAURATION:   { label: 'Restauration',                   icon: UtensilsCrossed, color: '#C2410C' },
+  SANTE:          { label: 'Santé',                          icon: Cross,           color: '#BE123C' },
+  EDUCATION:      { label: 'Éducation',                      icon: GraduationCap,   color: '#6D28D9' },
+  ADMINISTRATION: { label: 'Administration / service public', icon: Landmark,       color: '#0F766E' },
+  LOISIR:         { label: 'Loisir',                          icon: Music,          color: '#B83280' },
+  AUTRE:          { label: 'Autre',                           icon: MapPin,         color: '#6B5E4E' },
 };
+
+/**
+ * Fond très légèrement teinté de la couleur de catégorie — pour les badges et
+ * surfaces sélectionnées. `color-mix` garde une seule source de vérité (la
+ * couleur) au lieu de dupliquer une seconde teinte par catégorie.
+ */
+export function categoryTint(color: string, percent = 12): string {
+  return `color-mix(in srgb, ${color} ${percent}%, transparent)`;
+}
 
 /**
  * Catégories filtrables sur la carte publique — tout sauf `DOMICILE` qui

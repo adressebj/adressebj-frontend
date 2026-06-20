@@ -32,7 +32,8 @@ export function ResultCard({
 }: ResultCardProps) {
   const ref = useRef<HTMLLIElement>(null);
   const preview = item.preview;
-  const Icon = CATEGORIES[item.category].icon;
+  const categoryMeta = CATEGORIES[item.category];
+  const Icon = categoryMeta.icon;
 
   // Quand le marqueur correspondant est survolé sur la carte, ramener la carte
   // liste dans le viewport (no-op si déjà visible).
@@ -75,8 +76,12 @@ export function ResultCard({
             {item.code}
           </span>
           <span className="mt-1.5 flex items-center gap-1.5 text-xs text-text-muted">
-            <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            <span className="truncate">{CATEGORIES[item.category].label}</span>
+            <Icon
+              className="h-3.5 w-3.5 shrink-0"
+              style={{ color: categoryMeta.color }}
+              aria-hidden="true"
+            />
+            <span className="truncate">{categoryMeta.label}</span>
           </span>
           <span className="mt-auto truncate text-sm font-medium text-text-primary">
             {preview?.quartierName ?? '—'}

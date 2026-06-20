@@ -1,28 +1,81 @@
 'use client';
 
-import { Fragment, useCallback, useState } from 'react';
-import Image from 'next/image';
+import { useCallback, useState } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Check, HelpCircle, Loader2, MapPin } from 'lucide-react';
+import { ArrowLeft, Check, Eye, HelpCircle, Loader2, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/Toast';
-import { AddressCodeDisplay } from '@/components/address/AddressCodeDisplay';
 import { ApiError, api } from '@/lib/api';
 import { classNames } from '@/lib/utils';
 import { AddressCreatedScreen } from '@/components/address/AddressCreatedScreen';
-import { StepQuartier, type StepQuartierValue } from './StepQuartier';
-import { StepGPS, type StepGpsValue } from './StepGPS';
+import { Modal } from '@/components/ui/Modal';
+import {
+  StepGPS,
+  type StepGpsValue,
+  type GpsReading,
+  ACCURACY_THRESHOLD_METERS,
+  ACCURACY_HARD_CAP_METERS,
+} from './StepGPS';
 import { StepInstructions, type StepInstructionsValue } from './StepInstructions';
 import { StepCategory, type StepCategoryValue } from './StepCategory';
 import { StepPhoto, type StepPhotoValue } from './StepPhoto';
-import type { CreatedAddress, PublicAddress } from '@/types/api';
+import type { CreatedAddress } from '@/types/api';
 
-// 5 étapes — CDC v5 §4 : Quartier → GPS → Instructions → Catégorie → Photo.
-const STEP_LABELS = ['Quartier', 'GPS', 'Infos', 'Type', 'Photo'] as const;
+// Carte-canvas plein cadre — `ssr:false` : Leaflet touche `window` à l'import.
+const LocationCanvas = dynamic(
+  () => import('./LocationCanvas').then((m) => m.LocationCanvas),
+  {
+    ssr: false,
+    loading: () => <div className="w-full h-full bg-surface-muted animate-pulse" />,
+  },
+);
+
+// 4 étapes — CDC Frontend §/dashboard/address/new : GPS → Instructions →
+// Catégorie → Photo. Le quartier est dérivé du GPS côté backend (jamais choisi).
+const STEP_LABELS = ['Position', 'Instructions', 'Catégorie', 'Photo'] as const;
+
+// Aide contextuelle du bouton « ? » flottant : un contenu par étape, affiché
+// en place (modale) sans jamais quitter le wizard. Va au-delà du sous-titre de
+// l'étape : le « pourquoi », les astuces concrètes, la réassurance vie privée.
+const STEP_HELP: ReadonlyArray<{ title: string; tips: string[] }> = [
+  {
+    title: 'Trouver votre position',
+    tips: [
+      'Placez-vous devant votre porte, dehors : le GPS capte mal sous un toit.',
+      'Restez immobile quelques secondes, la précision s’affine (visez ≤ 15 m).',
+      'Sur ordinateur la position vient souvent du réseau, peu précise — préférez votre téléphone, ou saisissez vos coordonnées à la main.',
+      'Vos coordonnées exactes ne servent qu’à créer votre adresse.',
+    ],
+  },
+  {
+    title: 'Décrire le chemin',
+    tips: [
+      'Partez d’un repère connu et bien visible : marché, pharmacie, carrefour.',
+      'Une indication par étape : « tourner à droite après l’école », « continuer tout droit »…',
+      'Réordonnez les étapes intermédiaires par glisser-déposer si besoin.',
+      'Terminez par un élément reconnaissable sur place : portail bleu, grand manguier.',
+    ],
+  },
+  {
+    title: 'Choisir la catégorie',
+    tips: [
+      'La catégorie indique le type de lieu : domicile, commerce, bureau…',
+      'Elle aide vos visiteurs et le registre à situer l’adresse d’un coup d’œil.',
+    ],
+  },
+  {
+    title: 'Ajouter une photo',
+    tips: [
+      'Photographiez l’entrée telle qu’on la voit depuis la rue.',
+      'Cadrez un détail reconnaissable : portail, enseigne, façade.',
+      'Une bonne photo lève le dernier doute quand on arrive devant.',
+    ],
+  },
+];
 
 interface FormState {
-  quartier: StepQuartierValue | null;
   gps: StepGpsValue | null;
   instructions: StepInstructionsValue | null;
   category: StepCategoryValue | null;
@@ -30,7 +83,6 @@ interface FormState {
 }
 
 const EMPTY: FormState = {
-  quartier: null,
   gps: null,
   instructions: null,
   category: null,
@@ -50,71 +102,40 @@ export function AddressForm({ initialStep = 0 }: AddressFormProps) {
   const [data, setData] = useState<FormState>(EMPTY);
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState<CreatedAddress | null>(null);
-
-  // Duplicate detection — between GPS capture and the instructions step we
-  // look for existing addresses within ~15 m and, if any, interrupt the flow
-  // so the user can attach to one instead of creating a redundant entry.
-  const [checkingDuplicates, setCheckingDuplicates] = useState(false);
-  const [nearby, setNearby] = useState<PublicAddress[] | null>(null);
+  // Aide contextuelle (bouton « ? » flottant) — affichée en place, par étape.
+  const [helpOpen, setHelpOpen] = useState(false);
+  // Lecture GPS live (étape 1) — alimente la carte-canvas pendant la capture,
+  // avant confirmation. Une fois `data.gps` posé, c'est lui qui prime.
+  const [liveReading, setLiveReading] = useState<GpsReading | null>(null);
+  // 409 — l'habitant a déjà une adresse à cet endroit (sa propre adresse sur
+  // cette localisation, rattachement interne backend ≤ 15 m). On l'oriente vers
+  // sa vue propriétaire plutôt que de créer un doublon.
+  const [existingCode, setExistingCode] = useState<string | null>(null);
 
   const goBack = useCallback(() => {
     setStep((current) => Math.max(0, current - 1));
   }, []);
 
-  const handleQuartier = useCallback((quartier: StepQuartierValue) => {
-    setData((current) => ({ ...current, quartier }));
+  const handleGps = useCallback((gps: StepGpsValue) => {
+    setData((current) => ({ ...current, gps }));
     setStep(1);
   }, []);
 
-  const handleGps = useCallback(async (gps: StepGpsValue) => {
-    setData((current) => ({ ...current, gps }));
-    setCheckingDuplicates(true);
-    try {
-      const found = await api.nearbyAddresses(gps.lat, gps.lng, 15);
-      if (found.length > 0) {
-        setNearby(found);
-        return; // hold on the interstitial; user decides what to do next
-      }
-    } catch {
-      // A failed proximity check must never block creation — fall through.
-    } finally {
-      setCheckingDuplicates(false);
-    }
-    setStep(2);
-  }, []);
-
-  const handleCreateAnyway = useCallback(() => {
-    setNearby(null);
-    setStep(2);
-  }, []);
-
-  const handleAttach = useCallback(
-    (code: string) => {
-      router.push(`/a/${code}`);
-    },
-    [router],
-  );
-
   const handleInstructions = useCallback((instructions: StepInstructionsValue) => {
     setData((current) => ({ ...current, instructions }));
-    setStep(3);
+    setStep(2);
   }, []);
 
   const handleCategory = useCallback((category: StepCategoryValue) => {
     setData((current) => ({ ...current, category }));
-    setStep(4);
+    setStep(3);
   }, []);
 
   const handlePhoto = useCallback(
     async (photo: StepPhotoValue) => {
       setData((current) => ({ ...current, photo }));
       const snapshot = { ...data, photo };
-      if (
-        !snapshot.quartier ||
-        !snapshot.gps ||
-        !snapshot.instructions ||
-        !snapshot.category
-      ) {
+      if (!snapshot.gps || !snapshot.instructions || !snapshot.category) {
         toast.show({
           message: 'Une étape est manquante. Reprenez le formulaire.',
           variant: 'error',
@@ -124,7 +145,7 @@ export function AddressForm({ initialStep = 0 }: AddressFormProps) {
       setSubmitting(true);
       try {
         const result = await api.createAddress({
-          quartierId: snapshot.quartier.quartierId,
+          // Le quartier est dérivé du GPS côté backend — aucun `quartierId`.
           category: snapshot.category.category,
           steps: snapshot.instructions.steps,
           gpsLat: snapshot.gps.lat,
@@ -133,25 +154,14 @@ export function AddressForm({ initialStep = 0 }: AddressFormProps) {
         });
         setCreated(result);
       } catch (err) {
-        // 409 — un autre habitant a déjà créé une adresse à la même position
-        // pendant que l'utilisateur remplissait le formulaire. On redirige
-        // directement vers la fiche existante (CDC Frontend §7 : pas de
-        // doublon possible côté backend même si l'interstitiel 15 m a été
-        // contourné par "Créer quand même").
+        // 409 — une adresse de l'habitant existe déjà à cet endroit. On bascule
+        // sur un écran dédié (« Voir / modifier ») plutôt que de créer un
+        // doublon. Ne jamais parler de « localisation »/« position ».
         if (
           err instanceof ApiError &&
           err.code === 'ADDRESS_ALREADY_EXISTS_AT_LOCATION'
         ) {
-          const existingCode = err.extra?.address_code as string | undefined;
-          toast.show({
-            message: existingCode
-              ? `Une adresse (${existingCode}) existe déjà à cette position. Vous y êtes redirigé.`
-              : 'Une adresse existe déjà à cette position.',
-            variant: 'info',
-          });
-          if (existingCode) {
-            router.push(`/a/${existingCode}`);
-          }
+          setExistingCode((err.extra?.address_code as string | undefined) ?? '');
           return;
         }
         const message =
@@ -167,243 +177,252 @@ export function AddressForm({ initialStep = 0 }: AddressFormProps) {
         setSubmitting(false);
       }
     },
-    [data, toast, router],
+    [data, toast],
   );
 
-  if (created) {
+  if (existingCode !== null) {
     return (
-      <div className="mx-auto w-full max-w-2xl px-4 sm:px-6 py-8">
-        <AddressCreatedScreen
-          code={created.code}
-          shareUrl={created.shareUrl}
-          whatsappUrl={created.whatsappUrl}
-        />
-      </div>
+      <main className="min-h-screen flex items-center justify-center bg-bg motif-paper px-4 py-12">
+        <AlreadyExistsScreen code={existingCode} />
+      </main>
     );
   }
 
+  if (created) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-bg motif-paper px-4 py-12">
+        <AddressCreatedScreen code={created.code} />
+      </main>
+    );
+  }
+
+  // Point affiché sur la carte-canvas : position confirmée sinon lecture live.
+  const canvasPoint =
+    data.gps ?? (liveReading ? { lat: liveReading.lat, lng: liveReading.lng } : null);
+  // Anneau / pastille de précision : seulement pendant la capture (pas encore
+  // confirmée) et quand l'accuracy est exploitable.
+  const liveAccuracy =
+    !data.gps && liveReading && liveReading.accuracy > 0
+      ? Math.round(liveReading.accuracy)
+      : null;
+
   return (
-    <section
-      aria-labelledby="address-form-title"
-      className="mx-auto w-full max-w-2xl px-4 sm:px-6 py-6 flex flex-col gap-6"
-    >
-      <header className="flex flex-col gap-5">
-        <div className="flex items-center justify-between">
+    <main className="relative min-h-screen bg-bg lg:h-screen lg:overflow-hidden">
+      {/* ── CARTE-CANVAS — signature du produit, toujours présente. ── */}
+      <div className="fixed inset-x-0 top-0 h-[42vh] z-0 lg:absolute lg:inset-y-0 lg:left-[26rem] lg:right-0 lg:h-auto">
+        <LocationCanvas
+          point={canvasPoint}
+          accuracyRadius={liveAccuracy != null ? liveReading!.accuracy : undefined}
+          className="w-full h-full"
+        />
+
+        {liveAccuracy != null ? <PrecisionPill accuracy={liveAccuracy} /> : null}
+
+        {/* Chrome flottant minimal — retour + aide (langage `/a/:code`). */}
+        <div
+          className="absolute inset-x-0 top-0 z-[400] flex items-center justify-between gap-2 p-3 pointer-events-none"
+          style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top))' }}
+        >
           <button
             type="button"
             onClick={() => (step > 0 ? goBack() : router.push('/dashboard'))}
             aria-label="Retour"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-md text-text-primary hover:bg-surface-muted"
+            className="pointer-events-auto inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface text-text-primary shadow-md border border-border tap-press hover:text-primary transition-colors"
           >
             <ArrowLeft className="h-5 w-5" aria-hidden="true" />
           </button>
-          <h1
-            id="address-form-title"
-            className="font-display font-black text-h3 text-text-primary"
-          >
-            Créer une adresse
-          </h1>
-          <Link
-            href="/"
-            aria-label="Aide"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-md text-text-muted hover:bg-surface-muted"
+          <button
+            type="button"
+            onClick={() => setHelpOpen(true)}
+            aria-label="Aide pour cette étape"
+            className="pointer-events-auto inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface text-text-muted shadow-md border border-border tap-press hover:text-primary transition-colors"
           >
             <HelpCircle className="h-5 w-5" aria-hidden="true" />
-          </Link>
+          </button>
         </div>
-        <Stepper current={step} />
-      </header>
-
-      <div className="card p-4 sm:p-5">
-        {submitting ? (
-          <div className="flex items-center justify-center gap-2 py-12 text-text-muted">
-            <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
-            <span>Création de votre adresse…</span>
-          </div>
-        ) : checkingDuplicates ? (
-          <div className="flex items-center justify-center gap-2 py-12 text-text-muted">
-            <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
-            <span>Vérification des adresses proches…</span>
-          </div>
-        ) : nearby ? (
-          <DuplicateInterstitial
-            addresses={nearby}
-            onAttach={handleAttach}
-            onCreateAnyway={handleCreateAnyway}
-          />
-        ) : step === 0 ? (
-          <StepQuartier value={data.quartier} onComplete={handleQuartier} />
-        ) : step === 1 ? (
-          <StepGPS
-            value={data.gps}
-            onComplete={handleGps}
-            quartierName={data.quartier?.quartierName ?? null}
-            quartierPolygon={data.quartier?.quartierPolygon ?? null}
-          />
-        ) : step === 2 ? (
-          <StepInstructions
-            value={data.instructions}
-            onComplete={handleInstructions}
-          />
-        ) : step === 3 ? (
-          <StepCategory
-            value={data.category}
-            onComplete={handleCategory}
-          />
-        ) : step === 4 ? (
-          <StepPhoto value={data.photo} onComplete={(p) => void handlePhoto(p)} />
-        ) : null}
       </div>
-    </section>
+
+      {/* ── PANNEAU PAPIER — le composer du wizard. ── */}
+      <div className="relative z-10 mt-[36vh] lg:mt-0 lg:fixed lg:inset-y-0 lg:left-0 lg:w-[26rem] lg:overflow-y-auto">
+        <div className="bg-surface rounded-t-[var(--radius-2xl)] lg:rounded-none border-t lg:border-t-0 lg:border-r border-border shadow-[0_-12px_40px_-12px_rgba(26,20,12,0.18)] lg:shadow-lg min-h-[64vh] lg:min-h-full">
+          {/* Poignée décorative (affordance « feuille ») — mobile seulement. */}
+          <div className="flex justify-center pt-3 pb-1 lg:hidden" aria-hidden="true">
+            <div className="h-1.5 w-10 rounded-full bg-border-strong" />
+          </div>
+
+          <div className="px-5 sm:px-7 pt-5 pb-10 flex flex-col gap-7">
+            <header className="flex flex-col gap-2.5">
+              <p
+                id="address-form-title"
+                className="text-[11px] font-bold uppercase tracking-[0.18em] text-text-muted"
+              >
+                Nouvelle adresse
+              </p>
+              <Stepper current={step} />
+              <p className="text-sm text-text-muted">
+                Étape {step + 1} sur {STEP_LABELS.length} ·{' '}
+                <span className="font-semibold text-text-primary">
+                  {STEP_LABELS[step]}
+                </span>
+              </p>
+            </header>
+
+            {submitting ? (
+              <div className="flex items-center justify-center gap-2 py-12 text-text-muted">
+                <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+                <span>Création de votre adresse…</span>
+              </div>
+            ) : (
+              <div key={step} className="animate-step-in">
+                {step === 0 ? (
+                  <StepGPS
+                    value={data.gps}
+                    onComplete={handleGps}
+                    onReading={setLiveReading}
+                    showMap={false}
+                  />
+                ) : step === 1 ? (
+                  <StepInstructions
+                    value={data.instructions}
+                    onComplete={handleInstructions}
+                    gps={data.gps}
+                  />
+                ) : step === 2 ? (
+                  <StepCategory value={data.category} onComplete={handleCategory} />
+                ) : step === 3 ? (
+                  <StepPhoto
+                    value={data.photo}
+                    onComplete={(p) => void handlePhoto(p)}
+                  />
+                ) : null}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Aide contextuelle — contenu propre à l'étape courante, en place. */}
+      <Modal
+        isOpen={helpOpen}
+        onClose={() => setHelpOpen(false)}
+        title={STEP_HELP[step]?.title ?? 'Aide'}
+      >
+        <ul className="flex flex-col gap-3">
+          {(STEP_HELP[step]?.tips ?? []).map((tip) => (
+            <li key={tip} className="flex items-start gap-2.5">
+              <Check
+                className="h-4 w-4 mt-0.5 shrink-0 text-primary"
+                aria-hidden="true"
+              />
+              <span className="text-sm leading-relaxed text-text-primary">
+                {tip}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </Modal>
+    </main>
   );
 }
 
-// Stepper à pastilles **losange** — écho du motif Fon/kente de la marque
-// (cf. `CategoryMedallion`, `StepsList`). Étape complétée = losange vert plein +
-// check, active = losange papier liseré vert + numéro, future = losange muet.
-// La plaque tourne à 45°, le contenu reste droit (contre-rotation implicite :
-// le numéro/icône vit dans une couche non tournée par-dessus).
+// Pastille de précision posée sur la carte-canvas (bas-centre).
+function PrecisionPill({ accuracy }: { accuracy: number }) {
+  const precise = accuracy <= ACCURACY_THRESHOLD_METERS;
+  const bad = accuracy > ACCURACY_HARD_CAP_METERS;
+  return (
+    <div
+      aria-hidden="true"
+      className="absolute left-1/2 -translate-x-1/2 bottom-4 z-[400] flex items-center gap-2 rounded-full glass px-3.5 py-2 shadow-md pointer-events-none"
+    >
+      <span
+        className={classNames(
+          'inline-flex h-2.5 w-2.5 rounded-full',
+          precise ? 'bg-success animate-pulse' : bad ? 'bg-danger' : 'bg-warning',
+        )}
+      />
+      <span className="text-sm font-display font-bold tabular-nums text-text-primary">
+        ± {accuracy} m
+      </span>
+    </div>
+  );
+}
+
+// Barre de progression **segmentée** — un segment par étape, qui se remplit à
+// mesure : franchi = plein, actif = à moitié rempli (en cours), à venir = en
+// sourdine. Le libellé de l'étape active vit dans l'en-tête, juste en dessous.
 function Stepper({ current }: { current: number }) {
   return (
-    <div aria-label={`Étape ${current + 1} sur ${STEP_LABELS.length}`}>
-      <ol className="flex items-center">
-        {STEP_LABELS.map((label, idx) => {
-          const done = idx < current;
-          const active = idx === current;
-          return (
-            <Fragment key={label}>
-              <li className="flex flex-col items-center gap-1.5">
-                <span
-                  aria-hidden="true"
-                  className="relative flex h-8 w-8 items-center justify-center"
-                >
-                  <span
-                    className={classNames(
-                      'absolute inset-0 rotate-45 rounded-[7px] border-2 transition-colors',
-                      done
-                        ? 'bg-primary border-primary'
-                        : active
-                          ? 'bg-primary-surface border-primary'
-                          : 'bg-surface border-border',
-                    )}
-                  />
-                  <span
-                    className={classNames(
-                      'relative text-sm font-semibold',
-                      done
-                        ? 'text-text-inverse'
-                        : active
-                          ? 'text-primary'
-                          : 'text-text-muted',
-                    )}
-                  >
-                    {done ? <Check className="h-4 w-4" /> : idx + 1}
-                  </span>
-                </span>
-                <span
-                  className={classNames(
-                    'text-xs',
-                    active
-                      ? 'font-semibold text-primary'
-                      : done
-                        ? 'text-text-primary'
-                        : 'text-text-muted',
-                  )}
-                >
-                  {label}
-                </span>
-              </li>
-              {idx < STEP_LABELS.length - 1 ? (
-                <span
-                  aria-hidden="true"
-                  className={classNames(
-                    'h-0.5 flex-1 mx-1 -mt-5 rounded-full transition-colors',
-                    idx < current ? 'bg-primary' : 'bg-border',
-                  )}
-                />
-              ) : null}
-            </Fragment>
-          );
-        })}
-      </ol>
-    </div>
+    <ol
+      aria-label={`Étape ${current + 1} sur ${STEP_LABELS.length}`}
+      className="flex items-center gap-1.5"
+    >
+      {STEP_LABELS.map((label, idx) => {
+        const done = idx < current;
+        const active = idx === current;
+        return (
+          <li
+            key={label}
+            aria-current={active ? 'step' : undefined}
+            className="h-1.5 flex-1 overflow-hidden rounded-full bg-border"
+          >
+            <span
+              aria-hidden="true"
+              className={classNames(
+                'block h-full rounded-full bg-primary transition-[width] duration-500 ease-out',
+                done ? 'w-full' : active ? 'w-1/2' : 'w-0',
+              )}
+            />
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
-interface DuplicateInterstitialProps {
-  addresses: PublicAddress[];
-  onAttach: (code: string) => void;
-  onCreateAnyway: () => void;
-}
-
-function DuplicateInterstitial({
-  addresses,
-  onAttach,
-  onCreateAnyway,
-}: DuplicateInterstitialProps) {
+// Écran 409 — l'habitant a déjà une adresse à cet endroit. On l'oriente vers sa
+// fiche (consultation / modification) au lieu de créer un doublon.
+function AlreadyExistsScreen({ code }: { code: string }) {
   return (
-    <div className="flex flex-col gap-5">
-      <header className="flex flex-col gap-1">
-        <h2 className="font-display font-bold text-h3 text-text-primary">
-          Des adresses existent près de vous
-        </h2>
-        <p className="text-sm text-text-muted">
-          Il y a peut-être déjà une adresse ici. Rejoignez-en une plutôt que
-          d’en créer une en double, ou continuez si la vôtre est vraiment
-          différente.
+    <section
+      role="status"
+      className="w-full max-w-md flex flex-col items-center text-center gap-5"
+    >
+      <MapPin
+        aria-hidden="true"
+        className="h-9 w-9 text-primary"
+        strokeWidth={2}
+      />
+
+      <div className="flex flex-col gap-1.5">
+        <h1 className="font-display font-bold text-2xl text-text-primary">
+          Vous avez déjà une adresse à cet endroit.
+        </h1>
+        <p className="text-text-muted max-w-sm">
+          Inutile d’en créer une nouvelle — vous pouvez la consulter ou la
+          modifier directement.
         </p>
-      </header>
+      </div>
 
-      <ul className="flex flex-col gap-3">
-        {addresses.map((address) => (
-          <li
-            key={address.code}
-            className="flex items-center gap-3 rounded-[var(--radius-lg)] border border-border bg-surface p-3 shadow-sm"
-          >
-            <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-[var(--radius-md)] bg-surface-muted">
-              <Image
-                src={address.photoUrl}
-                alt={`Portail ${address.code}`}
-                fill
-                sizes="64px"
-                className="object-cover"
-                unoptimized
-              />
-            </div>
-            <div className="flex-1 min-w-0 flex flex-col gap-1">
-              <AddressCodeDisplay
-                code={address.code}
-                size="sm"
-                showCopyButton={false}
-              />
-              <p className="text-xs text-text-muted line-clamp-2">
-                {address.instructions.assembledText}
-              </p>
-            </div>
+      <div className="w-full flex flex-col gap-3 pt-2">
+        {code ? (
+          <Link href={`/dashboard/address/${code}`} className="block">
             <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => onAttach(address.code)}
-              className="shrink-0"
+              variant="primary"
+              size="lg"
+              fullWidth
+              leadingIcon={<Eye className="h-5 w-5" aria-hidden="true" />}
             >
-              Se rattacher
+              Voir / modifier cette adresse
             </Button>
-          </li>
-        ))}
-      </ul>
-
-      <Button
-        type="button"
-        variant="primary"
-        size="lg"
-        fullWidth
-        onClick={onCreateAnyway}
-        leadingIcon={<MapPin className="h-4 w-4" aria-hidden="true" />}
-      >
-        Créer quand même une nouvelle adresse
-      </Button>
-    </div>
+          </Link>
+        ) : null}
+        <Link href="/dashboard" className="block">
+          <Button variant="ghost" size="md" fullWidth>
+            Retour à mes adresses
+          </Button>
+        </Link>
+      </div>
+    </section>
   );
 }
 

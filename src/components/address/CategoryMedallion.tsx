@@ -8,29 +8,23 @@ export interface CategoryMedallionProps {
 }
 
 /**
- * Identité de catégorie pour la fiche-repère : l'icône est posée dans un
- * **médaillon en losange** — la forme signature du motif Fon/kente de la marque
- * (cf. `.motif-paper`) — ce qui distingue immédiatement AdresseBJ d'une énième
- * pilule générique. Le libellé est traité comme un titre éditorial (Fraunces)
- * sous un sur-titre discret.
- *
- * L'icône reste droite (contre-rotation) ; seule la plaque tourne à 45°.
+ * Identité de catégorie pour la fiche-repère. L'icône est désormais **mise en
+ * avant nue**, dans la couleur d'identité de la catégorie (cf. `CATEGORIES`) —
+ * plus de plaque losange : c'est la couleur + l'icône qui signent la catégorie,
+ * de façon cohérente avec le badge, le marqueur de carte et le filtre. Le
+ * libellé reste traité en titre éditorial (Fraunces) sous un sur-titre discret.
  */
 export function CategoryMedallion({ category, className }: CategoryMedallionProps) {
   const meta = CATEGORIES[category];
   const Icon = meta.icon;
   return (
-    <div className={classNames('flex items-center gap-3', className)}>
-      <span
-        className="relative inline-flex h-12 w-12 shrink-0 items-center justify-center"
+    <div className={classNames('flex items-center gap-3.5', className)}>
+      <Icon
+        className="h-8 w-8 shrink-0"
+        style={{ color: meta.color }}
+        strokeWidth={2}
         aria-hidden="true"
-      >
-        {/* Plaque losange — fond papier + liseré or fin (accent de marque). */}
-        <span className="absolute inset-0 rotate-45 rounded-[12px] bg-primary-surface border border-accent/40 shadow-sm" />
-        {/* Losange interne ajouré — écho du motif textile, très discret. */}
-        <span className="absolute inset-[6px] rotate-45 rounded-[8px] border border-primary/15" />
-        <Icon className="relative h-5 w-5 text-primary" strokeWidth={2} />
-      </span>
+      />
       <div className="min-w-0">
         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-text-muted">
           Catégorie

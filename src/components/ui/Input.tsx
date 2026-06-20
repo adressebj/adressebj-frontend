@@ -9,11 +9,18 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
   error?: string | null;
   leadingIcon?: ReactNode;
   containerClassName?: string;
+  /**
+   * Marque le champ comme obligatoire : astérisque visible dans le label +
+   * `aria-required`. On n'active pas l'attribut natif `required` (la validation
+   * navigateur entrerait en conflit avec nos propres garde-fous : bouton de
+   * soumission désactivé tant que le champ est vide).
+   */
+  required?: boolean;
 }
 
 // Label is required — placeholder-only inputs are forbidden by the style guide.
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
-  { label, hint, error, leadingIcon, className, id, containerClassName, ...rest },
+  { label, hint, error, leadingIcon, className, id, containerClassName, required, ...rest },
   ref,
 ) {
   const generatedId = useId();
@@ -30,6 +37,12 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         className="text-sm font-medium text-text-primary"
       >
         {label}
+        {required ? (
+          <span className="text-danger" aria-hidden="true">
+            {' '}
+            *
+          </span>
+        ) : null}
       </label>
       <div className="relative">
         {leadingIcon ? (
@@ -44,6 +57,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
           ref={ref}
           id={inputId}
           aria-invalid={hasError || undefined}
+          aria-required={required || undefined}
           aria-describedby={describedBy}
           className={classNames(
             'block w-full h-12 rounded-md bg-surface font-body text-base text-text-primary placeholder:text-text-muted',

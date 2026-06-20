@@ -139,9 +139,12 @@ export default function Home() {
                 </Link>
                 <Link
                   href="/carte"
-                  className="inline-flex items-center gap-2 rounded-full bg-surface px-6 h-12 font-semibold text-text-primary border border-border-strong hover:border-primary hover:bg-primary-surface transition-all tap-press"
+                  className="group inline-flex items-center gap-2 rounded-full bg-surface px-6 h-12 font-semibold text-text-primary border border-border-strong hover:border-primary hover:bg-primary-surface transition-all tap-press"
                 >
-                  <Compass className="h-5 w-5 text-primary" aria-hidden="true" />
+                  <Compass
+                    className="h-5 w-5 text-primary transition-transform duration-[1500ms] group-hover:rotate-[250deg]"
+                    aria-hidden="true"
+                  />
                   Explorer la carte
                 </Link>
               </div>

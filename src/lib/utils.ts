@@ -10,10 +10,59 @@ export function isValidAddressCodeFormat(code: string): boolean {
   return /^[A-Z]{3}-[A-Z0-9]{4}$/.test(code);
 }
 
+// Typographie française : espace fine insécable (U+202F) avant ? ! ; et espace
+// insécable (U+00A0) avant : — pour que le texte d'itinéraire respecte les
+// règles d'espacement, peu importe ce que l'utilisateur a (ou n'a pas) tapé.
+const THIN_NBSP = ' ';
+const NBSP = ' ';
+
+// Applique l'espacement français à la ponctuation interne d'un corps de phrase :
+// remplace toute espace (ou absence d'espace) avant « ; ! ? » par une fine
+// insécable, et avant « : » par une insécable — sauf le « : » entre deux
+// chiffres (heures, ratios : « 8:30 », « 2:1 ») qui n'est pas une ponctuation.
+// Idempotent : réappliqué sur un texte déjà correct, il ne change rien.
+function applyFrenchSpacing(body: string): string {
+  return body
+    .replace(/(\S)\s*([;!?])/g, `$1${THIN_NBSP}$2`)
+    .replace(/([^\s\d])\s*:(?!\d)/g, `$1${NBSP}:`);
+}
+
+// Assemble les étapes saisies par l'habitant en un texte d'itinéraire lisible.
+// Chaque étape est rédigée à la main par un utilisateur différent (le créateur,
+// puis un éditeur), donc la casse et la ponctuation sont imprévisibles : on
+// normalise chaque segment en une « phrase » propre avant de les joindre, pour
+// éviter les ratés grammaticaux du texte final (majuscule manquante, point en
+// double parce que l'un a terminé par un point et pas l'autre, espace avant la
+// ponctuation, points de suspension, etc.).
+function toSentence(raw: string): string {
+  // 1. Normalise les espaces internes (runs d'espaces/tabs → une espace).
+  let s = raw.replace(/\s+/g, ' ').trim();
+  if (!s) return '';
+  // 2. Retire la ponctuation parasite en tête (un segment qui commence par
+  //    « . » ou « , » casse la lecture une fois joint).
+  s = s.replace(/^[.,;:!?…·–—\s-]+/, '').trim();
+  if (!s) return '';
+  // 3. Isole la grappe de ponctuation finale (avec d'éventuelles espaces que
+  //    l'utilisateur a laissées avant) du corps de la phrase.
+  const trail = s.match(/[\s.!?…]+$/)?.[0] ?? '';
+  const body = trail ? s.slice(0, s.length - trail.length) : s;
+  if (!body) return '';
+  // 4. Choisit le terminateur : on respecte un « ? » ou un « ! » volontaire
+  //    (précédé d'une fine insécable), sinon (point, points de suspension, ou
+  //    rien) on met un point unique.
+  const lastMark = trail.replace(/\s+/g, '').slice(-1);
+  const terminator =
+    lastMark === '?' || lastMark === '!' ? `${THIN_NBSP}${lastMark}` : '.';
+  // 5. Majuscule sur la première lettre, le reste intact (préserve les sigles
+  //    et noms propres : « GPS », « ESBTP », « Dantokpa »).
+  const capitalized = body.charAt(0).toLocaleUpperCase('fr-FR') + body.slice(1);
+  // 6. Espacement français de la ponctuation interne, puis terminateur.
+  return applyFrenchSpacing(capitalized) + terminator;
+}
+
 export function buildAssembledText(steps: string[]): string {
-  const trimmed = steps.map((s) => s.trim()).filter(Boolean);
-  if (trimmed.length === 0) return '';
-  return trimmed.join('. ') + '.';
+  const sentences = steps.map(toSentence).filter(Boolean);
+  return sentences.join(' ');
 }
 
 export function isValidBeninPhone(phone: string): boolean {

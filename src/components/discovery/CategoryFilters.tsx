@@ -23,11 +23,12 @@ export function CategoryFilters({ selected, onToggle, onClear }: CategoryFilters
       aria-multiselectable="true"
       className="no-scrollbar flex items-center gap-2.5 overflow-x-auto snap-x snap-mandatory px-2 py-2 -mx-2"
     >
-      <Chip 
-        label="Tous" 
+      <Chip
+        label="Tous"
         icon={<LayoutGrid className="h-4 w-4" aria-hidden="true" />}
-        active={selected.size === 0} 
-        onClick={onClear} 
+        color="var(--color-primary)"
+        active={selected.size === 0}
+        onClick={onClear}
       />
       {FILTERABLE_CATEGORIES.map((cat) => {
         const Icon = CATEGORIES[cat].icon;
@@ -36,6 +37,7 @@ export function CategoryFilters({ selected, onToggle, onClear }: CategoryFilters
             key={cat}
             label={CATEGORIES[cat].label}
             icon={<Icon className="h-4 w-4" aria-hidden="true" />}
+            color={CATEGORIES[cat].color}
             active={selected.has(cat)}
             onClick={() => onToggle(cat)}
           />
@@ -48,11 +50,13 @@ export function CategoryFilters({ selected, onToggle, onClear }: CategoryFilters
 function Chip({
   label,
   icon,
+  color,
   active,
   onClick,
 }: {
   label: string;
   icon?: React.ReactNode;
+  color: string;
   active: boolean;
   onClick: () => void;
 }) {
@@ -65,11 +69,16 @@ function Chip({
       className={classNames(
         'snap-start inline-flex shrink-0 items-center gap-2 h-10 px-4 rounded-full text-sm font-medium border transition-all cursor-pointer tap-press',
         active
-          ? 'bg-primary border-primary text-text-inverse scale-105'
+          ? 'text-text-inverse scale-105'
           : 'bg-surface border-border text-text-muted hover:text-text-primary hover:border-border-strong hover:bg-surface-muted hover:scale-105',
       )}
+      // Actif : rempli de la couleur de catégorie. Inactif : seule l'icône
+      // prend la couleur (identité visible), le reste neutre.
+      style={active ? { backgroundColor: color, borderColor: color } : undefined}
     >
-      {icon}
+      <span className="inline-flex" style={active ? undefined : { color }}>
+        {icon}
+      </span>
       {label}
     </button>
   );

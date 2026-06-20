@@ -20,10 +20,12 @@ export default function DashboardLayout({
   // ends in /print.
   const isPrintMode = (pathname ?? '').endsWith('/print');
 
-  // La vue détail d'une adresse (`/dashboard/address/:code`, hors sous-routes
-  // edit/share/print) s'affiche en plein écran immersif — même layout que la
-  // fiche publique `/a/:code` (carte-canvas + panneau papier), donc sans la
-  // navbar du dashboard. Les sous-routes (formulaires) gardent le chrome.
+  // Plein écran immersif (carte-canvas + panneau papier, comme `/a/:code`), donc
+  // SANS navbar dashboard, pour les deux écrans à segment unique sous
+  // `/dashboard/address/` :
+  //   • la vue détail `/dashboard/address/:code`
+  //   • le wizard de création `/dashboard/address/new`
+  // Les sous-routes à ≥ 2 segments (edit/share/print) gardent le chrome dashboard.
   const isImmersiveAddress = /^\/dashboard\/address\/[^/]+$/.test(pathname ?? '');
 
   useEffect(() => {

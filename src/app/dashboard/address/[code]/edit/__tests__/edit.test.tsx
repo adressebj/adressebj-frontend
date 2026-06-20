@@ -44,9 +44,12 @@ describe('Edit address — instructions section', () => {
 
     renderEdit('AKP-7X3K');
 
-    // Wait for the mocked address to load — the first prompt is rendered
-    // when StepInstructions has a `value`.
-    const firstPrompt = await screen.findByLabelText(/depuis quel repère/i);
+    // Wait for the mocked address to load — en édition (value présent),
+    // StepInstructions rend l'éditeur libre pré-rempli : le point de départ est
+    // l'étape 0.
+    const firstPrompt = await screen.findByLabelText(
+      /repère connu voulez-vous indiquer/i,
+    );
     expect(firstPrompt).toHaveValue('Partir du marché Dantokpa');
 
     await user.clear(firstPrompt);

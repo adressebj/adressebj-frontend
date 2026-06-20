@@ -2,8 +2,31 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  restrictToParentElement,
+  restrictToVerticalAxis,
+} from '@dnd-kit/modifiers';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import {
   Check,
   CheckCircle2,
+  Eye,
+  GripVertical,
   Loader2,
   MapPin,
   MessageSquare,
@@ -15,8 +38,10 @@ import {
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { api } from '@/lib/api';
-import { buildAssembledText } from '@/lib/utils';
+import { buildAssembledText, classNames } from '@/lib/utils';
 import type { NearbyLandmark } from '@/types/api';
+import { StepHeading } from './StepHeading';
+import { StepNote } from './StepNote';
 
 export interface StepInstructionsValue {
   steps: string[];
@@ -32,23 +57,35 @@ export interface StepInstructionsProps {
   gps?: { lat: number; lng: number } | null;
 }
 
-// Le point de départ est `steps[0]` ; les questions ci-dessous décrivent la
-// suite du trajet depuis ce repère (CDC v5 §Besoin 1).
-const AFTER_PROMPTS = [
-  {
-    label: 'Combien de voies après ce repère ?',
-    hint: 'ex : 2 voies après, tourner à droite',
-  },
-  {
-    label: 'Quel élément visuel distinctif identifie votre portail ?',
-    hint: 'ex : portail bleu, grand manguier devant la cour',
-  },
-];
-// Saisie libre du point de départ (mode « free »).
+// Saisie libre du point de départ (mode « free »). Le LIBELLÉ est figé : un test
+// d'édition et l'UX en dépendent.
 const START_PROMPT = {
-  label: 'De quel repère connu partez-vous ?',
+  label: 'À partir de quel repère connu voulez-vous indiquer ?',
   hint: 'ex : la pharmacie Les Potiers, le marché Dantokpa…',
 };
+// Étapes intermédiaires : une indication libre par étape (« que faire ensuite »),
+// volontairement générique — la question « combien de voies » ne collait pas à
+// tous les contextes (pas de voies, repère atypique…).
+const MIDDLE_PROMPT = {
+  label: 'Que faut-il faire ensuite ?',
+  hint: 'ex : tourner à droite après l’école, continuer tout droit sur 100 m…',
+};
+// Dernière étape, TOUJOURS le repère visuel d'arrivée (reformulé pour l'UX).
+const ARRIVAL_PROMPT = {
+  label: 'À quoi reconnaît-on l’endroit une fois sur place ?',
+  hint: 'ex : portail bleu, grand manguier devant la cour, mur orange',
+};
+
+interface StepItem {
+  id: string;
+  text: string;
+}
+
+// Compteur d'ids stables pour les clés DnD — au niveau module (pas un ref), afin
+// de pouvoir générer un id dans l'initialiseur d'état sans « lire un ref pendant
+// le rendu ». L'unicité globale suffit (les ids ne servent que de clés React/DnD).
+let stepIdSeq = 0;
+const nextStepId = () => `step-${stepIdSeq++}`;
 
 type Mode = 'querying' | 'confirm' | 'guided' | 'free';
 
@@ -58,14 +95,26 @@ export function StepInstructions({
   gps,
 }: StepInstructionsProps) {
   const hasInitialValue = !!(value?.steps && value.steps.length > 0);
+
+  // Génère des items à ids stables (clés DnD) indépendants de la position.
+  const makeItems = (texts: string[]): StepItem[] =>
+    texts.map((text) => ({ id: nextStepId(), text }));
+
   const [mode, setMode] = useState<Mode>(() =>
     hasInitialValue ? 'free' : gps ? 'querying' : 'free',
   );
   const [landmark, setLandmark] = useState<NearbyLandmark | null>(null);
   const [noLandmark, setNoLandmark] = useState(false);
-  const [steps, setSteps] = useState<string[]>(() =>
-    hasInitialValue ? [...value!.steps] : ['', '', ''],
-  );
+  // items[0] = repère (départ) · items[dernier] = repère visuel (arrivée) ·
+  // items du milieu = indications de trajet (réordonnables). Toujours ≥ 2.
+  const [items, setItems] = useState<StepItem[]>(() => {
+    if (hasInitialValue) {
+      const arr = [...value!.steps];
+      while (arr.length < 2) arr.push('');
+      return makeItems(arr);
+    }
+    return makeItems(['', '', '']);
+  });
 
   // Détection du repère de départ le plus proche — uniquement en création
   // (mode « querying »). Tolérant : `null` → rédaction libre (cas normal). Le
@@ -88,43 +137,76 @@ export function StepInstructions({
     };
   }, [mode, gps]);
 
+  const steps = useMemo(() => items.map((it) => it.text), [items]);
   const assembledText = useMemo(() => buildAssembledText(steps), [steps]);
-  const validCount = steps.filter((s) => s.trim()).length;
-  const canSubmit = validCount >= 2;
+  // Le départ (items[0]) et l'arrivée (dernier) sont obligatoires ; les étapes
+  // de milieu restent optionnelles. En mode « guided » le départ est le repère
+  // verrouillé, donc toujours renseigné.
+  const startFilled = mode === 'guided' || items[0].text.trim().length > 0;
+  const arrivalFilled = items[items.length - 1].text.trim().length > 0;
+  const canSubmit = startFilled && arrivalFilled;
 
-  const handleChange = (index: number, next: string) => {
-    setSteps((current) => {
-      const out = [...current];
-      out[index] = next;
+  const sensors = useSensors(
+    // Petite distance d'activation → le tap dans un champ ne déclenche pas un drag.
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const setText = (id: string, text: string) =>
+    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, text } : it)));
+  const removeItem = (id: string) =>
+    setItems((prev) => prev.filter((it) => it.id !== id));
+  // Insère une indication de trajet juste avant le repère d'arrivée (dernier).
+  const addMiddle = () =>
+    setItems((prev) => {
+      const out = [...prev];
+      out.splice(out.length - 1, 0, { id: nextStepId(), text: '' });
       return out;
     });
+
+  // Réordonnancement : uniquement les étapes du milieu (départ et arrivée figés).
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setItems((prev) => {
+      const oldIndex = prev.findIndex((it) => it.id === active.id);
+      const newIndex = prev.findIndex((it) => it.id === over.id);
+      const lastMovable = prev.length - 2;
+      if (
+        oldIndex < 1 ||
+        newIndex < 1 ||
+        oldIndex > lastMovable ||
+        newIndex > lastMovable
+      ) {
+        return prev;
+      }
+      return arrayMove(prev, oldIndex, newIndex);
+    });
   };
-  const handleAddStep = () => setSteps((current) => [...current, '']);
-  const handleRemoveStep = (index: number) =>
-    setSteps((current) => current.filter((_, i) => i !== index));
 
   // Scénario 1 : on part du repère détecté — il devient l'étape 0 verrouillée.
   const acceptLandmark = () => {
     if (!landmark) return;
-    setSteps([`Partir de ${landmark.name}`, '', '']);
+    setItems(makeItems([`Partir de ${landmark.name}`, '', '']));
     setMode('guided');
   };
   // Scénario 2 : le repère auto est invalidé/supprimé — saisie libre.
   const rejectLandmark = () => {
-    setSteps(['', '', '']);
+    setItems(makeItems(['', '', '']));
     setMode('free');
   };
-  // Depuis « guided » : changer d'avis, retirer le repère auto et saisir
-  // soi-même le point de départ.
+  // Depuis « guided » : retirer le repère auto et saisir soi-même le départ.
   const unlockStart = () => {
-    setSteps((current) => ['', ...current.slice(1)]);
+    setItems((prev) => prev.map((it, i) => (i === 0 ? { ...it, text: '' } : it)));
     setMode('free');
   };
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!canSubmit) return;
+    // Le départ et l'arrivée sont garantis non vides (obligatoires) ; on ne
+    // retire que les étapes de milieu laissées vides.
     const cleaned = steps.map((s) => s.trim()).filter(Boolean);
-    if (cleaned.length < 2) return;
     onComplete({ steps: cleaned, assembledText: buildAssembledText(cleaned) });
   };
 
@@ -142,25 +224,17 @@ export function StepInstructions({
   if (mode === 'confirm' && landmark) {
     return (
       <div className="flex flex-col gap-5">
-        <header className="flex flex-col gap-1 text-center">
-          <h2 className="font-display font-bold text-2xl text-text-primary">
-            Un repère pour démarrer ?
-          </h2>
-          <p className="text-sm text-text-muted">
-            On a trouvé un lieu connu tout près. S’il est bien visible depuis la
-            rue, vos visiteurs partiront de là.
-          </p>
-        </header>
+        <StepHeading
+          title="Un repère pour démarrer ?"
+          subtitle="On a trouvé un lieu connu tout près. S’il est bien visible depuis la rue, vos visiteurs partiront de là."
+        />
 
         <div className="card p-5 flex items-center gap-4">
-          {/* Médaillon losange — langage de marque (cf. CategoryMedallion). */}
-          <span
-            className="relative inline-flex h-12 w-12 shrink-0 items-center justify-center"
+          <MapPin
+            className="h-6 w-6 shrink-0 text-primary"
+            strokeWidth={2}
             aria-hidden="true"
-          >
-            <span className="absolute inset-0 rotate-45 rounded-[12px] bg-primary-surface border border-accent/40 shadow-sm" />
-            <MapPin className="relative h-5 w-5 text-primary" strokeWidth={2} />
-          </span>
+          />
           <div className="min-w-0">
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-text-muted">
               Repère le plus proche
@@ -203,47 +277,38 @@ export function StepInstructions({
 
   // ── Éditeur d'instructions (guided | free) ─────────────────────────────────
   const guided = mode === 'guided';
+  const middle = items.slice(1, -1);
+  const arrival = items[items.length - 1];
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-      <header className="flex flex-col gap-2 text-center">
-        <h2 className="font-display font-bold text-2xl text-text-primary">
-          Comment arriver chez vous&nbsp;?
-        </h2>
-        <p className="text-base text-text-muted">
-          {guided
-            ? 'Décrivez le trajet à partir de ce repère, jusqu’à votre portail.'
-            : 'Décrivez le trajet depuis un repère connu, jusqu’à votre portail.'}
-        </p>
-      </header>
+      <StepHeading
+        title="Comment arriver chez vous ?"
+        subtitle={
+          guided
+            ? 'Indiquez le trajet une étape à la fois depuis ce repère, jusqu’à votre porte.'
+            : 'Choisissez votre repère de départ, puis le trajet une étape à la fois jusqu’à votre porte.'
+        }
+      />
 
       {noLandmark && !guided ? (
-        <div className="flex items-start gap-2.5 rounded-[var(--radius-md)] bg-surface-muted border border-border px-4 py-3">
-          <MapPin
-            className="h-4 w-4 text-text-muted shrink-0 mt-0.5"
-            aria-hidden="true"
-          />
-          <p className="text-sm text-text-muted leading-relaxed">
-            Aucun repère connu détecté autour de vous. Choisissez vous-même le
-            point de départ le plus parlant pour vos visiteurs.
-          </p>
-        </div>
+        <StepNote variant="info" icon={MapPin}>
+          Aucun repère connu détecté autour de vous. Choisissez vous-même le
+          point de départ le plus parlant pour vos visiteurs.
+        </StepNote>
       ) : null}
 
-      <div className="flex flex-col gap-4">
-        {/* ── Point de départ ── */}
+      <div className="flex flex-col gap-3">
+        {/* ── DÉPART — repère (verrouillé en première position) ── */}
         {guided ? (
           <div className="flex items-center gap-3 rounded-[var(--radius-md)] border border-primary/30 bg-primary-surface px-4 py-3">
-            <MapPin
-              className="h-5 w-5 shrink-0 text-primary"
-              aria-hidden="true"
-            />
+            <MapPin className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
             <div className="flex-1 min-w-0">
               <p className="text-[11px] font-bold uppercase tracking-wide text-primary">
-                Point de départ
+                Départ
               </p>
               <p className="font-medium text-text-primary truncate">
-                {landmark?.name ?? steps[0]}
+                {landmark?.name ?? items[0].text}
               </p>
             </div>
             <button
@@ -257,61 +322,63 @@ export function StepInstructions({
           </div>
         ) : (
           <Input
-            label={`1. ${START_PROMPT.label}`}
+            label={START_PROMPT.label}
             hint={START_PROMPT.hint}
-            value={steps[0] ?? ''}
-            onChange={(e) => handleChange(0, e.target.value)}
+            value={items[0].text}
+            onChange={(e) => setText(items[0].id, e.target.value)}
             placeholder={START_PROMPT.hint}
+            leadingIcon={<MapPin className="h-4 w-4" aria-hidden="true" />}
+            required
           />
         )}
 
-        {/* ── Étapes suivantes (depuis le point de départ) ── */}
-        {steps.slice(1).map((step, i) => {
-          const idx = i + 1;
-          const prompt = AFTER_PROMPTS[i];
-          const label = prompt
-            ? `${idx + 1}. ${prompt.label}`
-            : `${idx + 1}. Indication supplémentaire`;
-          const hint = prompt?.hint;
-          const removable = idx >= 1 + AFTER_PROMPTS.length;
-          return (
-            <div key={idx} className="flex items-end gap-2">
-              <div className="flex-1">
-                <Input
-                  label={label}
-                  hint={hint}
-                  value={step}
-                  onChange={(e) => handleChange(idx, e.target.value)}
-                  placeholder={prompt?.hint ?? 'Description complémentaire'}
+        {/* ── TRAJET — indications du milieu, réordonnables en drag & drop ── */}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext
+            items={middle.map((it) => it.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="flex flex-col gap-3">
+              {middle.map((item) => (
+                <SortableStep
+                  key={item.id}
+                  id={item.id}
+                  value={item.text}
+                  onChange={(t) => setText(item.id, t)}
+                  onRemove={() => removeItem(item.id)}
                 />
-              </div>
-              {removable ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleRemoveStep(idx)}
-                  aria-label={`Supprimer l’étape ${idx + 1}`}
-                  className="h-11"
-                >
-                  <Trash2 className="h-4 w-4" aria-hidden="true" />
-                </Button>
-              ) : null}
+              ))}
             </div>
-          );
-        })}
-      </div>
+          </SortableContext>
+        </DndContext>
 
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        onClick={handleAddStep}
-        leadingIcon={<Plus className="h-4 w-4" aria-hidden="true" />}
-        className="self-start"
-      >
-        Ajouter une étape
-      </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={addMiddle}
+          leadingIcon={<Plus className="h-4 w-4" aria-hidden="true" />}
+          className="self-start"
+        >
+          Ajouter une étape
+        </Button>
+
+        {/* ── ARRIVÉE — repère visuel (verrouillé en dernière position) ── */}
+        <Input
+          label={ARRIVAL_PROMPT.label}
+          hint={ARRIVAL_PROMPT.hint}
+          value={arrival.text}
+          onChange={(e) => setText(arrival.id, e.target.value)}
+          placeholder={ARRIVAL_PROMPT.hint}
+          leadingIcon={<Eye className="h-4 w-4" aria-hidden="true" />}
+          required
+        />
+      </div>
 
       <div className="bg-primary-surface border border-primary/20 rounded-[var(--radius-md)] p-4 flex flex-col gap-3">
         <p className="flex items-center gap-2 text-sm font-semibold text-text-primary">
@@ -334,9 +401,72 @@ export function StepInstructions({
       </div>
 
       <Button type="submit" variant="primary" size="lg" disabled={!canSubmit} fullWidth>
-        {canSubmit ? 'Continuer' : `Minimum 2 étapes (${validCount}/2)`}
+        {canSubmit
+          ? 'Continuer'
+          : !startFilled
+            ? 'Indiquez le point de départ'
+            : 'Indiquez le repère d’arrivée'}
       </Button>
     </form>
+  );
+}
+
+interface SortableStepProps {
+  id: string;
+  value: string;
+  onChange: (text: string) => void;
+  onRemove: () => void;
+}
+
+/** Une indication de trajet (étape du milieu) — déplaçable par sa poignée. */
+function SortableStep({ id, value, onChange, onRemove }: SortableStepProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={classNames(
+        'flex items-end gap-2',
+        isDragging && 'relative z-10 opacity-80',
+      )}
+    >
+      <button
+        type="button"
+        aria-label="Déplacer cette étape"
+        className="h-11 w-8 shrink-0 flex items-center justify-center rounded-[var(--radius-md)] text-text-muted hover:text-text-primary hover:bg-surface-muted cursor-grab active:cursor-grabbing touch-none"
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className="h-4 w-4" aria-hidden="true" />
+      </button>
+      <div className="flex-1">
+        <Input
+          label={MIDDLE_PROMPT.label}
+          hint={MIDDLE_PROMPT.hint}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={MIDDLE_PROMPT.hint}
+        />
+      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={onRemove}
+        aria-label="Supprimer cette étape"
+        className="h-11"
+      >
+        <Trash2 className="h-4 w-4" aria-hidden="true" />
+      </Button>
+    </div>
   );
 }
 

@@ -3,9 +3,11 @@
 import { useState } from 'react';
 import { ArrowRight, Eye, EyeOff, Info } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { CATEGORIES } from '@/lib/categories';
+import { CATEGORIES, categoryTint } from '@/lib/categories';
 import { classNames } from '@/lib/utils';
 import type { AddressCategory } from '@/types/api';
+import { StepHeading } from './StepHeading';
+import { StepNote } from './StepNote';
 
 export interface StepCategoryValue {
   category: AddressCategory;
@@ -53,15 +55,10 @@ export function StepCategory({ value, onComplete }: StepCategoryProps) {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-      <header className="flex flex-col gap-1">
-        <h2 className="font-display font-semibold text-h3 text-text-primary">
-          De quoi s&apos;agit-il&nbsp;?
-        </h2>
-        <p className="text-sm text-text-muted">
-          Choisissez ce qui correspond le mieux à ce lieu. Ça aide les visiteurs
-          à savoir où ils vont.
-        </p>
-      </header>
+      <StepHeading
+        title="De quoi s’agit-il ?"
+        subtitle="Choisissez ce qui correspond le mieux à ce lieu. Ça aide les visiteurs à savoir où ils vont."
+      />
 
       <ul
         role="radiogroup"
@@ -80,29 +77,33 @@ export function StepCategory({ value, onComplete }: StepCategoryProps) {
                 aria-checked={checked}
                 onClick={() => setSelected(cat)}
                 className={classNames(
-                  'w-full h-full flex flex-col items-start gap-2 p-4 rounded-xl text-left',
-                  'transition-all duration-200 active:scale-[0.98] cursor-pointer',
-                  checked
-                    ? 'bg-primary-surface border-2 border-primary shadow-sm'
-                    : 'bg-surface border border-border hover:border-border-strong shadow-sm',
+                  'w-full h-full flex flex-col items-start gap-2.5 p-4 rounded-[var(--radius-lg)] text-left',
+                  'transition-all duration-200 active:scale-[0.98] cursor-pointer border-2 shadow-sm',
+                  checked ? '' : 'bg-surface border-border hover:border-border-strong',
                 )}
+                style={
+                  checked
+                    ? {
+                        borderColor: meta.color,
+                        backgroundColor: categoryTint(meta.color, 10),
+                      }
+                    : undefined
+                }
               >
-                <span
+                {/* Icône nue dans la couleur d'identité de la catégorie —
+                   visible même non sélectionnée pour signer chaque choix. */}
+                <Icon
+                  className="h-7 w-7 shrink-0"
+                  style={{ color: meta.color }}
+                  strokeWidth={2}
                   aria-hidden="true"
-                  className={classNames(
-                    'flex h-9 w-9 items-center justify-center rounded-full',
-                    checked
-                      ? 'bg-primary text-text-inverse'
-                      : 'bg-surface-muted text-text-muted',
-                  )}
-                >
-                  <Icon className="h-5 w-5" />
-                </span>
+                />
                 <span
                   className={classNames(
                     'font-display font-semibold text-base',
-                    checked ? 'text-primary' : 'text-text-primary',
+                    !checked && 'text-text-primary',
                   )}
+                  style={checked ? { color: meta.color } : undefined}
                 >
                   {meta.label}
                 </span>
@@ -116,43 +117,24 @@ export function StepCategory({ value, onComplete }: StepCategoryProps) {
          pour ne pas laisser l'habitant ignorer ce que la catégorie change
          côté carte publique. */}
       {selected ? (
-        <div
-          className={classNames(
-            'flex items-start gap-2.5 rounded-md border px-4 py-3',
-            isDomicile
-              ? 'bg-primary-surface border-primary/30'
-              : 'bg-warning-light border-warning/30',
-          )}
-        >
-          {isDomicile ? (
-            <EyeOff className="h-4 w-4 text-primary shrink-0 mt-0.5" aria-hidden="true" />
-          ) : (
-            <Eye className="h-4 w-4 text-warning shrink-0 mt-0.5" aria-hidden="true" />
-          )}
-          <p className="text-sm text-text-primary leading-relaxed">
-            {isDomicile ? (
-              <>
-                <span className="font-semibold">Adresse privée&nbsp;:</span>{' '}
-                elle n&apos;apparaîtra pas sur la carte. Les gens pourront quand
-                même y aller avec son lien ou son code.
-              </>
-            ) : (
-              <>
-                <span className="font-semibold">Visible par tous&nbsp;:</span>{' '}
-                votre adresse apparaîtra sur la carte, avec sa photo. Vous
-                pourrez la retirer quand vous voulez.
-              </>
-            )}
-          </p>
-        </div>
+        isDomicile ? (
+          <StepNote variant="primary" icon={EyeOff}>
+            <span className="font-semibold">Adresse privée&nbsp;:</span> elle
+            n’apparaîtra pas sur la carte. Les gens pourront quand même y aller
+            avec son lien ou son code.
+          </StepNote>
+        ) : (
+          <StepNote variant="warning" icon={Eye}>
+            <span className="font-semibold">Visible par tous&nbsp;:</span> votre
+            adresse apparaîtra sur la carte, avec sa photo. Vous pourrez la
+            retirer quand vous voulez.
+          </StepNote>
+        )
       ) : (
-        <div className="flex items-start gap-2.5 rounded-md bg-surface-muted border border-border px-4 py-3">
-          <Info className="h-4 w-4 text-text-muted shrink-0 mt-0.5" aria-hidden="true" />
-          <p className="text-sm text-text-muted leading-relaxed">
-            Votre choix change aussi qui peut voir l&apos;adresse sur la carte.
-            Choisissez pour voir.
-          </p>
-        </div>
+        <StepNote variant="info" icon={Info}>
+          Votre choix change aussi qui peut voir l’adresse sur la carte.
+          Choisissez pour voir.
+        </StepNote>
       )}
 
       <Button
