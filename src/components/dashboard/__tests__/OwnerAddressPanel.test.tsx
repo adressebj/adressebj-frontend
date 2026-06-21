@@ -74,6 +74,20 @@ describe('OwnerAddressPanel', () => {
     expect(screen.getByText(/bientôt partageable/i)).toBeInTheDocument();
   });
 
+  it('annonce « Brouillon » pour une adresse en brouillon', () => {
+    renderPanel(makeAddress({ status: 'BROUILLON' }));
+    expect(screen.getByRole('button', { name: /^partager$/i })).toBeDisabled();
+    const captions = screen.getAllByText(/^brouillon$/i);
+    expect(captions.length).toBeGreaterThan(0);
+  });
+
+  it('annonce « Désactivée » pour une adresse désactivée', () => {
+    renderPanel(makeAddress({ isActive: false }));
+    expect(screen.getByRole('button', { name: /^partager$/i })).toBeDisabled();
+    const captions = screen.getAllByText(/^désactivée$/i);
+    expect(captions.length).toBeGreaterThan(0);
+  });
+
   it('propose Modifier en CTA primaire quand rejetée', () => {
     renderPanel(makeAddress({ status: 'REJETEE' }));
     expect(

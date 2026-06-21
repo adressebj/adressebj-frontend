@@ -37,6 +37,8 @@ export interface OwnerAddressPanelProps {
  */
 export function OwnerAddressPanel({ address, className }: OwnerAddressPanelProps) {
   const detailHref = `/dashboard/address/${address.code}`;
+  // Le partage ne se déclenche qu'au clic (CSR, window toujours présent) ;
+  // le fallback origin vide au SSR est volontaire et sans effet.
   const publicUrl =
     (typeof window !== 'undefined' ? window.location.origin : '') +
     `/a/${address.code}`;
@@ -179,7 +181,7 @@ export function OwnerAddressPanel({ address, className }: OwnerAddressPanelProps
               variant="primary"
               size="sm"
             />
-          ) : address.status === 'REJETEE' ? (
+          ) : address.status === 'REJETEE' && address.isActive ? (
             <Link href={`${detailHref}/edit`}>
               <Button
                 variant="primary"
