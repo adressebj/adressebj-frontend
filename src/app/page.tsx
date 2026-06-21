@@ -558,9 +558,9 @@ function AddressShowcase() {
               <path d="M90 0 V176" />
               <path d="M210 0 V176" />
             </g>
-            {/* itinéraire qui se trace */}
+            {/* itinéraire qui se trace — finit exactement sur la pointe du pin */}
             <path
-              d="M40 150 C 110 150, 90 90, 160 90 S 250 60, 280 36"
+              d="M40 150 C 110 150, 90 95, 160 92 S 250 70, 280 64"
               fill="none"
               stroke="var(--color-primary)"
               strokeWidth="3.5"
@@ -568,13 +568,23 @@ function AddressShowcase() {
               className="animate-route"
             />
             <circle cx="40" cy="150" r="5" fill="var(--color-primary)" />
+
+            {/* Pin destination DANS le SVG (même repère que le tracé) : le trait
+               entre toujours par la pointe, quelle que soit la largeur d'écran. */}
+            <g
+              className="animate-pin-appear"
+              style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
+            >
+              <path
+                d="M280 64 C 272.5 53, 266 49, 266 42 A 14 14 0 0 1 294 42 C 294 49, 287.5 53, 280 64 Z"
+                fill="var(--color-primary)"
+                stroke="white"
+                strokeWidth="3"
+                strokeLinejoin="round"
+              />
+              <circle cx="280" cy="40" r="4.5" fill="white" />
+            </g>
           </svg>
-          {/* pin destination */}
-          <div className="absolute right-9 top-5 animate-pin-drop">
-            <span className="flex h-10 w-10 items-center justify-center rounded-full rounded-bl-none rotate-45 bg-primary shadow-md ring-4 ring-white">
-              <MapPin className="h-5 w-5 -rotate-45 text-white" aria-hidden="true" />
-            </span>
-          </div>
         </div>
 
         {/* Détails */}
