@@ -30,7 +30,6 @@ export default function AdminModeratorsPage() {
   const [toggling, setToggling] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    setModerators(null);
     api
       .adminModerators()
       .then(setModerators)

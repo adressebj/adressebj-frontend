@@ -66,6 +66,7 @@ export function SearchBar({ variant = 'landing', initialQuery = '' }: SearchBarP
   // la query est trop courte pour être pertinente.
   useEffect(() => {
     if (isCodeFormat) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset synchrone du debounce (query devenue code / trop courte)
       setResults([]);
       setSearching(false);
       return;
@@ -159,11 +160,13 @@ export function SearchBar({ variant = 'landing', initialQuery = '' }: SearchBarP
         <input
           ref={inputRef}
           type="text"
+          role="combobox"
           inputMode="search"
           autoComplete="off"
           aria-label="Recherche par code ou par lieu"
           aria-autocomplete="list"
           aria-expanded={showDropdown}
+          aria-controls="searchbar-suggestions"
           placeholder="Code AKP-XXXX ou nom d'un lieu"
           value={query}
           onChange={(e) => {
@@ -224,6 +227,7 @@ export function SearchBar({ variant = 'landing', initialQuery = '' }: SearchBarP
       {/* Dropdown des suggestions Nominatim — animation fade-up légère. */}
       {showDropdown ? (
         <ul
+          id="searchbar-suggestions"
           role="listbox"
           aria-label="Suggestions de lieux"
           className="absolute left-0 right-0 top-full mt-2 z-30 max-h-80 overflow-y-auto rounded-xl bg-surface border border-border shadow-lg animate-fade-up"

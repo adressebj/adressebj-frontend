@@ -32,7 +32,6 @@ export default function AdminApiKeysPage() {
   const [createdValue, setCreatedValue] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    setKeys(null);
     api
       .adminApiKeys()
       .then(setKeys)

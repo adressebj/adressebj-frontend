@@ -24,7 +24,6 @@ export default function AdminModerationQueuePage() {
   const [acting, setActing] = useState<string | null>(null);
 
   const load = () => {
-    setItems(null);
     api
       .adminModerationQueue()
       .then(setItems)

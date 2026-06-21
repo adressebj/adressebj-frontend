@@ -57,7 +57,6 @@ export default function AdminQueueItemPage({ params }: RouteParams) {
 
   useEffect(() => {
     let cancelled = false;
-    setState({ kind: 'loading' });
     api
       .adminModerationQueueItem(code)
       .then((item) => {

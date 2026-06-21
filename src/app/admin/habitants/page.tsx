@@ -36,7 +36,6 @@ export default function AdminHabitantsPage() {
 
   useEffect(() => {
     let cancelled = false;
-    setHabitants(null);
     api
       .adminHabitants()
       .then((list) => {

@@ -15,7 +15,6 @@ export default function AdminContributionsPage() {
   const [acting, setActing] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    setItems(null);
     api
       .adminContributions('PENDING')
       .then(setItems)

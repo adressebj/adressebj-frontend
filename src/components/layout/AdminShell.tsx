@@ -149,10 +149,11 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [isReady, isAuthenticated, isAdmin, pathname]);
+  }, [isReady, isAuthenticated, isBackoffice, pathname]);
 
   useEffect(() => {
     // Auto-close the mobile drawer when the route changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- ferme le drawer au changement de route
     setDrawerOpen(false);
   }, [pathname]);
 

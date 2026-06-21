@@ -32,7 +32,7 @@ export default function GlobalError({
         </h1>
         <p className="text-base text-text-muted max-w-sm">
           Nos équipes en ont été informées. Vous pouvez réessayer ou revenir à
-          l'accueil.
+          l’accueil.
         </p>
         <div className="flex flex-col gap-4 w-full max-w-sm pt-2">
           <Button
@@ -46,7 +46,7 @@ export default function GlobalError({
           </Button>
           <Link href="/" className="w-full">
             <Button variant="secondary" size="lg" fullWidth>
-              Retour à l'accueil
+              Retour à l’accueil
             </Button>
           </Link>
         </div>

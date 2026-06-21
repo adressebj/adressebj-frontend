@@ -41,6 +41,7 @@ export function usePushNotifications(): UsePushNotificationsResult {
 
   useEffect(() => {
     if (!isSupported) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync avec l'API Notification (système externe)
       setIsReady(true);
       return;
     }

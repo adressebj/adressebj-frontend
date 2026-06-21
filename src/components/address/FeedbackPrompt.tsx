@@ -53,6 +53,7 @@ export function FeedbackPrompt({
   // Réinitialise le parcours à chaque ouverture.
   useEffect(() => {
     if (isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset du parcours à chaque ouverture de la modale
       setStep('rate');
       setNote('');
       setBusy(false);

@@ -52,8 +52,7 @@ export default function AdminHabitantProfilePage({ params }: RouteParams) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [acting, setActing] = useState(false);
 
-  const load = useCallback(() => {
-    setState({ kind: 'loading' });
+  const fetchDetail = useCallback(() => {
     api
       .adminHabitant(id)
       .then((detail) => setState({ kind: 'ok', detail }))
@@ -66,7 +65,16 @@ export default function AdminHabitantProfilePage({ params }: RouteParams) {
       });
   }, [id]);
 
-  useEffect(load, [load]);
+  // Montage : on récupère sans re-poser « loading » (l'état initial l'est déjà).
+  useEffect(() => {
+    fetchDetail();
+  }, [fetchDetail]);
+
+  // Retry (bouton « Réessayer ») : repose « loading » puis recharge.
+  const load = useCallback(() => {
+    setState({ kind: 'loading' });
+    fetchDetail();
+  }, [fetchDetail]);
 
   const handleDisable = useCallback(async () => {
     if (state.kind !== 'ok') return;

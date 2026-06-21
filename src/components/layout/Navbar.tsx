@@ -92,6 +92,7 @@ export function Navbar() {
   // Close the drawer AND the account menu whenever the route changes — typical
   // pattern so a link tap doesn't leave them visible behind the destination.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- ferme les menus au changement de route
     setDrawerOpen(false);
     setMenuOpen(false);
   }, [pathname]);

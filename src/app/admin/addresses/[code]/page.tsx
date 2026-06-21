@@ -56,8 +56,7 @@ export default function AdminAddressDetailPage({ params }: RouteParams) {
   const [acting, setActing] = useState(false);
   const [confirmDeactivate, setConfirmDeactivate] = useState(false);
 
-  const load = useCallback(() => {
-    setState({ kind: 'loading' });
+  const fetchDetail = useCallback(() => {
     api
       .adminAddressDetail(code)
       .then((detail) => setState({ kind: 'ok', detail }))
@@ -70,7 +69,16 @@ export default function AdminAddressDetailPage({ params }: RouteParams) {
       });
   }, [code]);
 
-  useEffect(load, [load]);
+  // Montage : on récupère sans re-poser « loading » (l'état initial l'est déjà).
+  useEffect(() => {
+    fetchDetail();
+  }, [fetchDetail]);
+
+  // Retry (bouton « Réessayer ») : repose « loading » puis recharge.
+  const load = useCallback(() => {
+    setState({ kind: 'loading' });
+    fetchDetail();
+  }, [fetchDetail]);
 
   const handleDeactivate = useCallback(async () => {
     if (state.kind !== 'ok') return;

@@ -100,8 +100,7 @@ export function AddressView({ code }: AddressViewProps) {
   // Capture departure time at mount so /visits/confirm has a meaningful pair.
   const departAtRef = useRef<string>(new Date().toISOString());
 
-  const loadAddress = useCallback(async () => {
-    setState({ kind: 'loading' });
+  const fetchAddress = useCallback(async () => {
     try {
       const address = await api.publicAddress(code);
       setState({ kind: 'ok', address });
@@ -130,13 +129,22 @@ export function AddressView({ code }: AddressViewProps) {
     }
   }, [code]);
 
+  // Montage : on récupère sans re-poser « loading » (l'état initial l'est déjà).
   useEffect(() => {
-    void loadAddress();
-  }, [loadAddress]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch async : les setState ont lieu après await
+    void fetchAddress();
+  }, [fetchAddress]);
+
+  // Retry (« Réessayer ») : repose « loading » puis recharge.
+  const loadAddress = useCallback(async () => {
+    setState({ kind: 'loading' });
+    await fetchAddress();
+  }, [fetchAddress]);
 
   // Initial offline flag + listeners — banner stays in sync without polling.
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync initial avec navigator.onLine (système externe)
     setIsOffline(!navigator.onLine);
     const onOnline = () => setIsOffline(false);
     const onOffline = () => setIsOffline(true);

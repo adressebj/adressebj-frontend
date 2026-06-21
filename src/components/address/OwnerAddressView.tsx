@@ -68,10 +68,7 @@ export function OwnerAddressView({ code: rawCode }: OwnerAddressViewProps) {
   const [confirmCode, setConfirmCode] = useState('');
   const [deactivating, setDeactivating] = useState(false);
 
-  const load = useCallback(() => {
-    setState({ kind: 'loading' });
-    setRevisions([]);
-    setNotes([]);
+  const fetchOwner = useCallback(() => {
     api
       .ownerAddress(code)
       .then((address) => {
@@ -95,9 +92,18 @@ export function OwnerAddressView({ code: rawCode }: OwnerAddressViewProps) {
       .catch(() => setNotes([]));
   }, [code]);
 
+  // Montage : on récupère sans re-poser « loading » (l'état initial l'est déjà).
   useEffect(() => {
-    load();
-  }, [load]);
+    fetchOwner();
+  }, [fetchOwner]);
+
+  // Retry (« Réessayer ») : repose « loading », vide l'historique, recharge.
+  const load = useCallback(() => {
+    setState({ kind: 'loading' });
+    setRevisions([]);
+    setNotes([]);
+    fetchOwner();
+  }, [fetchOwner]);
 
   const handleCopyCode = useCallback(async () => {
     try {

@@ -91,7 +91,7 @@ export function ReportDetailView({ id }: ReportDetailViewProps) {
     } finally {
       setPending(null);
     }
-  }, [data?.address, finish, toast]);
+  }, [data, finish, toast]);
 
   if (!data) {
     return (

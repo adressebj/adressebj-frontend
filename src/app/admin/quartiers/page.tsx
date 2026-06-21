@@ -35,7 +35,6 @@ export default function AdminQuartiersPage() {
   const [toggling, setToggling] = useState<string | null>(null);
 
   const load = () => {
-    setQuartiers(null);
     api
       .adminQuartiers()
       .then(setQuartiers)
@@ -45,7 +44,7 @@ export default function AdminQuartiersPage() {
       });
   };
 
-  useEffect(load, []);
+  useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleQuartier = async (quartier: AdminQuartier) => {
     setToggling(quartier.id);

@@ -51,6 +51,7 @@ export default function AdminAddressesPage() {
 
   useEffect(() => {
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset « chargement » à chaque changement de recherche/filtre/page
     setData(null);
     const timer = window.setTimeout(() => {
       api

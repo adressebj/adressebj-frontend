@@ -158,6 +158,7 @@ export function StepGPS({
   // déjà affichée par l'initialiseur (pas de nouveau watch).
   useEffect(() => {
     if (ui.kind === 'idle' && !value) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- démarre le watch géoloc (API externe) à l'idle
       startWatch();
     }
   }, [ui.kind, value, startWatch]);
