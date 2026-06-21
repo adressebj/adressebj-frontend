@@ -5,8 +5,7 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { Lock, Plus, RotateCw } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { OwnerAddressCard } from '@/components/dashboard/OwnerAddressCard';
-import { RegistreOverview } from '@/components/dashboard/RegistreOverview';
+import { OwnerAddressPanel } from '@/components/dashboard/OwnerAddressPanel';
 import { ApiError, api } from '@/lib/api';
 import type { OwnerAddress } from '@/types/api';
 
@@ -35,17 +34,11 @@ function greeting(): string {
 export default function DashboardPage() {
   const [state, setState] = useState<ListState>({ kind: 'loading' });
 
-  // Récupération sans reset synchrone du loading — l'état initial est déjà
-  // `loading`, donc l'effet n'a qu'à déclencher le fetch (les setState terminaux
-  // vivent dans `.then`/`.catch`, asynchrones).
   const fetchAddresses = useCallback(() => {
     api
       .myAddresses()
       .then((addresses) => setState({ kind: 'ok', addresses }))
       .catch((err) => {
-        // Suspension Habitant — un compte désactivé reçoit 403 sur tous les
-        // endpoints protégés (CDC Backend §8). On l'affiche en sortie de
-        // garde au lieu d'un message d'erreur générique.
         if (
           err instanceof ApiError &&
           err.status === 403 &&
@@ -61,7 +54,6 @@ export default function DashboardPage() {
       });
   }, []);
 
-  // Retry explicite : on repasse par l'état loading avant de refetcher.
   const reload = useCallback(() => {
     setState({ kind: 'loading' });
     fetchAddresses();
@@ -125,19 +117,30 @@ export default function DashboardPage() {
 
   return (
     <div className="relative min-h-full pb-20 lg:pb-12">
-      <section className="mx-auto w-full max-w-5xl px-4 sm:px-6 py-6 lg:py-10 flex flex-col gap-7">
+      <section className="mx-auto w-full max-w-4xl px-4 sm:px-6 py-6 lg:py-10 flex flex-col gap-7">
         {/* ── En-tête éditorial ── */}
-        <header className="flex flex-col gap-1.5 animate-fade-up">
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">
-            {greeting()}
-          </p>
-          <h1 className="font-display font-black text-h1 text-text-primary">
-            Votre registre d’adresses
-          </h1>
-          <p className="text-text-muted max-w-prose">
-            Toutes vos adresses au même endroit. Voyez lesquelles sont prêtes
-            et partagez-les facilement.
-          </p>
+        <header className="flex flex-col gap-3 animate-fade-up sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex flex-col gap-1.5">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">
+              {greeting()}
+            </p>
+            <h1 className="font-display font-black text-h1 text-text-primary">
+              Votre registre d’adresses
+            </h1>
+            <p className="text-text-muted max-w-prose">
+              Toutes vos adresses au même endroit. Voyez lesquelles sont prêtes
+              et partagez-les facilement.
+            </p>
+          </div>
+          <Link href="/dashboard/address/new" className="hidden sm:block shrink-0">
+            <Button
+              variant="primary"
+              size="md"
+              leadingIcon={<Plus className="h-4 w-4" aria-hidden="true" />}
+            >
+              Créer une adresse
+            </Button>
+          </Link>
         </header>
 
         {state.kind === 'loading' ? (
@@ -161,36 +164,31 @@ export default function DashboardPage() {
           <EmptyRegistre />
         ) : (
           <>
-            <RegistreOverview
-              addresses={state.addresses}
-              className="animate-fade-up stagger-1"
-            />
-
             {/* ── Signature carte — aperçu de tous vos pins ── */}
-            <div className="relative h-44 sm:h-52 overflow-hidden rounded-[var(--radius-lg)] border border-border shadow-sm animate-fade-up stagger-2">
+            <div className="relative h-44 sm:h-56 overflow-hidden rounded-[var(--radius-lg)] border border-border shadow-sm animate-fade-up stagger-1">
               <RegistreMap pins={pins} className="h-full w-full" />
             </div>
 
-            {/* ── Collection ── */}
+            {/* ── Pile de panneaux ── */}
             <ul
               aria-label="Liste de mes adresses"
-              className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+              className="flex flex-col gap-4"
             >
               {state.addresses.map((address, idx) => (
                 <li
                   key={address.code}
-                  className={`animate-fade-up stagger-${Math.min(idx + 1, 5)}`}
+                  className={`animate-fade-up stagger-${Math.min(idx + 2, 5)}`}
                 >
-                  <OwnerAddressCard address={address} />
+                  <OwnerAddressPanel address={address} />
                 </li>
               ))}
               <li className="animate-fade-up">
                 <Link
                   href="/dashboard/address/new"
-                  className="group flex h-full min-h-[12rem] flex-col items-center justify-center gap-3 rounded-[var(--radius-lg)] border-2 border-dashed border-border-strong bg-surface-muted/40 p-6 text-center transition-colors hover:border-primary hover:bg-primary-surface/40 tap-press"
+                  className="group flex items-center justify-center gap-3 rounded-[var(--radius-lg)] border-2 border-dashed border-border-strong bg-surface-muted/40 px-6 py-5 text-center transition-colors hover:border-primary hover:bg-primary-surface/40 tap-press"
                 >
-                  <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-primary-surface text-primary ring-1 ring-primary/15 transition-transform group-hover:scale-110">
-                    <Plus className="h-6 w-6" aria-hidden="true" />
+                  <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-primary-surface text-primary ring-1 ring-primary/15 transition-transform group-hover:scale-110">
+                    <Plus className="h-5 w-5" aria-hidden="true" />
                   </span>
                   <span className="font-display font-semibold text-text-primary">
                     Créer une adresse
@@ -202,7 +200,7 @@ export default function DashboardPage() {
         )}
       </section>
 
-      {/* FAB mobile — sur desktop la carte fantôme de la grille suffit. */}
+      {/* FAB mobile — sur desktop le bouton d'en-tête + le CTA de fin suffisent. */}
       <Link
         href="/dashboard/address/new"
         aria-label="Créer une nouvelle adresse"
@@ -223,25 +221,21 @@ export default function DashboardPage() {
 
 function LoadingRegistre() {
   return (
-    <div className="flex flex-col gap-7" aria-label="Chargement des adresses" aria-busy="true">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="card p-4 flex flex-col gap-2">
-            <div className="h-4 w-4 rounded skeleton-shimmer" />
-            <div className="h-8 w-12 rounded skeleton-shimmer" />
-            <div className="h-3 w-16 rounded skeleton-shimmer" />
-          </div>
-        ))}
-      </div>
-      <div className="h-44 sm:h-52 rounded-[var(--radius-lg)] skeleton-shimmer" />
-      <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {[0, 1, 2].map((i) => (
-          <li key={i} className="card overflow-hidden">
-            <div className="aspect-[16/10] w-full skeleton-shimmer" />
-            <div className="flex flex-col gap-2 p-4">
-              <div className="h-6 w-28 rounded skeleton-shimmer" />
-              <div className="h-3 w-36 rounded skeleton-shimmer" />
+    <div
+      className="flex flex-col gap-7"
+      aria-label="Chargement des adresses"
+      aria-busy="true"
+    >
+      <div className="h-44 sm:h-56 rounded-[var(--radius-lg)] skeleton-shimmer" />
+      <ul className="flex flex-col gap-4">
+        {[0, 1].map((i) => (
+          <li key={i} className="card overflow-hidden flex flex-col sm:flex-row">
+            <div className="aspect-[16/10] w-full sm:aspect-auto sm:w-56 sm:shrink-0 skeleton-shimmer" />
+            <div className="flex flex-1 flex-col gap-3 p-4 sm:p-5">
+              <div className="h-8 w-40 rounded skeleton-shimmer" />
+              <div className="h-3 w-32 rounded skeleton-shimmer" />
               <div className="h-3 w-24 rounded skeleton-shimmer" />
+              <div className="mt-2 h-9 w-28 rounded-full skeleton-shimmer" />
             </div>
           </li>
         ))}

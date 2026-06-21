@@ -61,10 +61,10 @@ const DESKTOP_LINKS = [
   { href: '/', label: 'Accueil', icon: Home, match: (p: string) => p === '/' },
   {
     href: '/dashboard',
-    label: 'Adresses',
+    label: 'Mes adresses',
     icon: MapPin,
-    // Comme « Mes adresses » du drawer : on n'allume pas « Adresses » quand
-    // on est dans profil ou notifications (ils ont leur entrée dédiée).
+    // On n'allume pas « Mes adresses » quand on est dans profil ou
+    // notifications (ils ont leur entrée dédiée).
     match: (p: string) =>
       p.startsWith('/dashboard') &&
       !p.startsWith('/dashboard/profile') &&
