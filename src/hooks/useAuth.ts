@@ -32,21 +32,24 @@ export function useAuth(): UseAuthResult {
   const [user, setUser] = useState<JwtPayload | null>(null);
 
   useEffect(() => {
-    const stored = getStoredToken();
-    if (!stored) {
+    try {
+      const stored = getStoredToken();
+      if (!stored) return;
+      const payload = decodeJwt(stored);
+      if (!payload || isExpired(payload)) {
+        clearStoredToken();
+        setToken(null);
+        setUser(null);
+      } else {
+        setToken(stored);
+        setUser(payload);
+      }
+    } finally {
+      // `isReady` DOIT toujours se résoudre, quoi qu'il arrive — sinon tout
+      // l'UI conditionné par `isReady` (bouton Connexion, liens) disparaît et
+      // la navbar se réduit au logo.
       setIsReady(true);
-      return;
     }
-    const payload = decodeJwt(stored);
-    if (!payload || isExpired(payload)) {
-      clearStoredToken();
-      setToken(null);
-      setUser(null);
-    } else {
-      setToken(stored);
-      setUser(payload);
-    }
-    setIsReady(true);
   }, []);
 
   const login = useCallback((nextToken: string) => {

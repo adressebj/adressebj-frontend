@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, ArrowRight, Eye, EyeOff, Mail, MapPin } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Eye, EyeOff, Loader2, Mail, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Logo } from '@/components/ui/Logo';
 import { OtpInput } from '@/components/forms/OtpInput';
@@ -38,9 +38,12 @@ export default function AuthPage() {
     <Suspense
       fallback={
         <main
-          className="min-h-screen flex items-center justify-center p-6"
-          aria-hidden="true"
-        />
+          className="min-h-screen flex items-center justify-center gap-2 p-6 text-text-muted"
+          aria-busy="true"
+        >
+          <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+          <span>Chargement…</span>
+        </main>
       }
     >
       <AuthPageInner />
