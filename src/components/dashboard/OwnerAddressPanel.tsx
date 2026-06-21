@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import {
+  ExternalLink,
   Eye,
   Footprints,
   MapPin,
@@ -15,8 +16,8 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { AddressCodeDisplay } from '@/components/address/AddressCodeDisplay';
-import { AddressStatusBadge } from '@/components/address/AddressStatusBadge';
 import { CategoryBadge } from '@/components/address/CategoryBadge';
+import { AddressStatusCachet } from '@/components/dashboard/AddressStatusCachet';
 import { ShareButton } from '@/components/address/ShareButton';
 import { Button } from '@/components/ui/Button';
 import { classNames } from '@/lib/utils';
@@ -79,8 +80,14 @@ export function OwnerAddressPanel({ address, className }: OwnerAddressPanelProps
   return (
     <article
       className={classNames(
-        'card overflow-hidden flex flex-col sm:flex-row',
+        // Pas d'overflow-hidden sur la card : il rognerait le menu ⋯. La photo
+        // clippe ses propres coins (voir le Link média).
+        'card flex flex-col sm:flex-row',
         !address.isActive && 'opacity-75',
+        // Menu ⋯ ouvert : on élève la card au-dessus des suivantes, sinon le
+        // dropdown passe SOUS la card du dessous (contexte d'empilement de la
+        // liste). z-20 sur le menu seul ne suffit pas — il faut élever la card.
+        menuOpen && 'relative z-30',
         className,
       )}
     >
@@ -88,7 +95,7 @@ export function OwnerAddressPanel({ address, className }: OwnerAddressPanelProps
       <Link
         href={detailHref}
         aria-label={`Voir l'adresse ${address.code}`}
-        className="group relative block aspect-[16/10] overflow-hidden bg-surface-muted sm:aspect-auto sm:w-56 sm:shrink-0"
+        className="group relative block aspect-[16/10] overflow-hidden rounded-t-[var(--radius-lg)] bg-surface-muted sm:aspect-auto sm:w-56 sm:shrink-0 sm:rounded-t-none sm:rounded-l-[var(--radius-lg)]"
       >
         <Image
           src={address.photoUrl}
@@ -98,8 +105,8 @@ export function OwnerAddressPanel({ address, className }: OwnerAddressPanelProps
           className="object-cover transition-transform duration-500 group-hover:scale-105"
           unoptimized
         />
-        <span className="absolute left-3 top-3 drop-shadow-sm">
-          <AddressStatusBadge status={address.status} />
+        <span className="absolute left-3 top-3">
+          <AddressStatusCachet status={address.status} isActive={address.isActive} />
         </span>
       </Link>
 
@@ -124,14 +131,15 @@ export function OwnerAddressPanel({ address, className }: OwnerAddressPanelProps
               <div
                 role="menu"
                 aria-label="Actions de l'adresse"
-                className="absolute right-0 top-full z-10 mt-2 w-52 origin-top-right rounded-2xl border border-border/70 bg-surface p-1.5 shadow-lg animate-fade-up"
+                className="absolute right-full top-0 z-20 mr-2 w-52 origin-top-right rounded-2xl border border-border/70 bg-surface p-1.5 shadow-lg animate-fade-up"
               >
                 <PanelMenuLink href={detailHref} icon={Eye}>
                   Voir la fiche
                 </PanelMenuLink>
-                <PanelMenuLink href={`/a/${address.code}`} icon={Eye}>
+                <PanelMenuLink href={`/a/${address.code}`} icon={ExternalLink}>
                   Aperçu visiteur
                 </PanelMenuLink>
+                <div aria-hidden="true" className="my-1 h-px bg-border/60" />
                 <PanelMenuLink href={`${detailHref}/edit`} icon={Pencil}>
                   Modifier
                 </PanelMenuLink>
@@ -223,7 +231,7 @@ function PanelMenuLink({
     <Link
       href={href}
       role="menuitem"
-      className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-text-muted transition-colors hover:bg-surface-muted hover:text-text-primary"
+      className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-text-muted transition-colors hover:bg-surface-muted hover:text-text-primary"
     >
       <Icon className="h-4 w-4" aria-hidden="true" />
       <span>{children}</span>
