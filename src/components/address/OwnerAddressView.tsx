@@ -243,7 +243,7 @@ export function OwnerAddressView({ code: rawCode }: OwnerAddressViewProps) {
             <div className="h-1.5 w-10 rounded-full bg-border-strong" />
           </div>
 
-          <div className="px-5 sm:px-7 pt-5 pb-10 flex flex-col gap-8">
+          <div className="px-5 sm:px-7 pt-5 pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-12 flex flex-col gap-8">
             {/* ── PLAQUE IDENTITÉ ── */}
             <header className="animate-fade-up flex flex-col gap-4">
               <div className="flex items-start justify-between gap-3">
@@ -351,12 +351,12 @@ export function OwnerAddressView({ code: rawCode }: OwnerAddressViewProps) {
 
             {/* ── INSTRUCTIONS D'ACCÈS (+ modifier) ── */}
             <section aria-labelledby="owner-instructions" className="animate-fade-up stagger-3">
-              <div className="flex items-center justify-between gap-3 mb-6">
+              <div className="mb-1.5 flex items-center justify-between gap-3">
                 <h2
                   id="owner-instructions"
                   className="font-display font-bold text-2xl text-text-primary"
                 >
-                  Comment s&apos;y rendre
+                  Les derniers mètres
                 </h2>
                 <Link
                   href={`/dashboard/address/${code}/edit`}
@@ -366,6 +366,9 @@ export function OwnerAddressView({ code: rawCode }: OwnerAddressViewProps) {
                   <Pencil className="h-[18px] w-[18px]" aria-hidden="true" />
                 </Link>
               </div>
+              <p className="mb-6 max-w-prose text-sm text-text-muted">
+                Les repères que suivront vos visiteurs pour les derniers mètres.
+              </p>
               <StepsList steps={address.instructions.steps} />
             </section>
 

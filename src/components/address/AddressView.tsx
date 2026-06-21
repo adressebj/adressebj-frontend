@@ -421,7 +421,7 @@ export function AddressView({ code }: AddressViewProps) {
             </div>
           ) : null}
 
-          <div className="px-5 sm:px-7 pt-5 pb-10 flex flex-col gap-8">
+          <div className="px-5 sm:px-7 pt-5 pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-12 flex flex-col gap-8">
             {/* ── PLAQUE IDENTITÉ ── */}
             <header className="animate-fade-up flex flex-col gap-4">
               <div className="flex items-start justify-between gap-3">
@@ -506,10 +506,13 @@ export function AddressView({ code }: AddressViewProps) {
             <section aria-labelledby="instructions-title" className="animate-fade-up stagger-3">
               <h2
                 id="instructions-title"
-                className="font-display font-bold text-2xl text-text-primary mb-6"
+                className="mb-1.5 font-display font-bold text-2xl text-text-primary"
               >
-                Comment s&apos;y rendre
+                Les derniers mètres
               </h2>
+              <p className="mb-6 max-w-prose text-sm text-text-muted">
+                Repères du propriétaire, depuis un point connu du quartier.
+              </p>
               <StepsList steps={steps} />
             </section>
 
