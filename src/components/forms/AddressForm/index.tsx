@@ -250,7 +250,7 @@ export function AddressForm({ initialStep = 0 }: AddressFormProps) {
             <div className="h-1.5 w-10 rounded-full bg-border-strong" />
           </div>
 
-          <div className="px-5 sm:px-7 pt-5 pb-10 flex flex-col gap-7">
+          <div className="px-5 sm:px-7 pt-5 pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-12 flex flex-col gap-7">
             <header className="flex flex-col gap-2.5">
               <p
                 id="address-form-title"

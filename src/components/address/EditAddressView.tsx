@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Lock } from 'lucide-react';
+import { ArrowLeft, Camera, Footprints, Lock, MapPin, type LucideIcon } from 'lucide-react';
 import { AddressCodeDisplay } from '@/components/address/AddressCodeDisplay';
 import { StepGPS, type StepGpsValue } from '@/components/forms/AddressForm/StepGPS';
 import {
@@ -145,7 +145,7 @@ export function EditAddressView({ code: rawCode }: EditAddressViewProps) {
   const { address } = state;
 
   return (
-    <section className="mx-auto w-full max-w-2xl px-4 sm:px-6 py-6 flex flex-col gap-6">
+    <section className="mx-auto w-full max-w-2xl px-4 sm:px-6 pt-6 pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-12 flex flex-col gap-6">
       <Link
         href={`/dashboard/address/${code}`}
         className="text-sm text-text-muted hover:text-text-primary inline-flex items-center gap-1 self-start"
@@ -153,11 +153,14 @@ export function EditAddressView({ code: rawCode }: EditAddressViewProps) {
         <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Retour à l’adresse
       </Link>
 
-      <header className="flex flex-col gap-3">
-        <h1 className="font-display font-bold text-h2 text-text-primary">
+      <header className="flex flex-col gap-2 animate-fade-up">
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">
+          Modifier
+        </p>
+        <h1 className="font-display font-black text-h1 text-text-primary">
           Modifier mon adresse
         </h1>
-        <div className="flex flex-col gap-2">
+        <div className="mt-1 flex flex-col gap-2">
           <AddressCodeDisplay code={address.code} size="sm" showCopyButton={false} />
           <p className="text-xs text-text-muted inline-flex items-center gap-1.5">
             <Lock className="h-3 w-3" aria-hidden="true" /> Le code ne change
@@ -167,8 +170,10 @@ export function EditAddressView({ code: rawCode }: EditAddressViewProps) {
       </header>
 
       <EditSection
+        icon={Camera}
         title="Photo du portail"
         description="Changez la photo si votre entrée a changé, ou si l'ancienne n'est pas assez nette."
+        delay="60ms"
       >
         <StepPhoto
           value={{ photoUrl: address.photoUrl }}
@@ -178,8 +183,10 @@ export function EditAddressView({ code: rawCode }: EditAddressViewProps) {
       </EditSection>
 
       <EditSection
-        title="Instructions d'accès"
-        description="Ajoutez ou reformulez vos étapes pour qu'un visiteur les suive sans hésitation."
+        icon={Footprints}
+        title="Les derniers mètres"
+        description="Reformulez vos repères pour que vos visiteurs suivent les derniers mètres jusqu'à votre porte sans hésitation."
+        delay="120ms"
       >
         <StepInstructions
           value={{
@@ -191,8 +198,10 @@ export function EditAddressView({ code: rawCode }: EditAddressViewProps) {
       </EditSection>
 
       <EditSection
+        icon={MapPin}
         title="Position GPS"
         description="Reprenez la position depuis votre porte pour plus de précision."
+        delay="180ms"
       >
         <StepGPS
           value={{ lat: address.gps.lat, lng: address.gps.lng }}
@@ -204,24 +213,37 @@ export function EditAddressView({ code: rawCode }: EditAddressViewProps) {
 }
 
 function EditSection({
+  icon: Icon,
   title,
   description,
+  delay,
   children,
 }: {
+  icon: LucideIcon;
   title: string;
   description: string;
+  delay?: string;
   children: React.ReactNode;
 }) {
   return (
     <section
-      aria-labelledby={title}
-      className="card p-5 sm:p-6 flex flex-col gap-4"
+      aria-label={title}
+      className="card p-5 sm:p-6 flex flex-col gap-4 animate-fade-up"
+      style={delay ? { animationDelay: delay } : undefined}
     >
-      <header className="flex flex-col gap-1">
-        <h2 className="font-display font-bold text-h3 text-text-primary">
-          {title}
-        </h2>
-        <p className="text-sm text-text-muted">{description}</p>
+      <header className="flex items-start gap-3.5">
+        <span
+          aria-hidden="true"
+          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-surface text-primary ring-1 ring-primary/15"
+        >
+          <Icon className="h-5 w-5" />
+        </span>
+        <div className="flex flex-col gap-1">
+          <h2 className="font-display font-bold text-h3 text-text-primary">
+            {title}
+          </h2>
+          <p className="text-sm text-text-muted">{description}</p>
+        </div>
       </header>
       {children}
     </section>

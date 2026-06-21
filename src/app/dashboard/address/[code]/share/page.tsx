@@ -130,7 +130,7 @@ export default function ShareAddressPage({ params }: RouteParams) {
         </div>
 
         <p className="mt-10 text-xs text-text-muted text-center leading-relaxed px-4">
-          Scannez ce code pour accéder instantanément aux instructions d’accès.
+          Scannez ce code pour ouvrir l’adresse et ses repères d’accès.
         </p>
       </section>
     </div>
