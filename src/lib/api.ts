@@ -25,7 +25,9 @@ import {
   type AdminStats,
 } from '@/mocks/data';
 import type {
+  AddressCategory,
   AddressRevision,
+  AddressStatus,
   AdminAddressDetail,
   AdminHabitant,
   AdminHabitantDetail,
@@ -61,6 +63,7 @@ import type {
   VisitStartResponse,
 } from '@/types/api';
 import { pointInPolygon } from '@/lib/utils';
+import { normalizeRole } from '@/lib/auth';
 
 // A small artificial latency makes loading/skeleton states visible in the real
 // app. Under Jest it only slows the suite down and pushes async assertions past
@@ -123,7 +126,11 @@ function jwtHeader(): string | null {
   return token ? `Bearer ${token}` : null;
 }
 
-async function realFetch<T>(path: string, options: FetchOptions): Promise<T> {
+// ────────────────────────────────────────────────────────────────────────────
+// Couche bas niveau : appel HTTP au vrai backend (contrat versionné /api/v1).
+// Déballe l'enveloppe { data } et propage les ApiError (code machine).
+// ────────────────────────────────────────────────────────────────────────────
+async function backendFetch<T>(path: string, options: FetchOptions = {}): Promise<T> {
   const baseUrl = getBaseUrl();
   if (!baseUrl) {
     throw new ApiError(0, 'API_URL_MISSING', "L'URL de l'API n'est pas configurée.");
@@ -134,7 +141,6 @@ async function realFetch<T>(path: string, options: FetchOptions): Promise<T> {
     'Content-Type': 'application/json',
     ...(headers as Record<string, string> | undefined),
   };
-
   if (auth === 'jwt') {
     const header = jwtHeader();
     if (header) finalHeaders.Authorization = header;
@@ -162,9 +168,553 @@ async function realFetch<T>(path: string, options: FetchOptions): Promise<T> {
   }
 
   if (res.status === 204) return undefined as T;
-
   const json = (await res.json()) as ApiEnvelope<T>;
   return json.data;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Adaptateur réel — traduit les chemins/méthodes/bodies/formes internes du
+// frontend vers le contrat backend canonique (docs/API_CONTRACT.md). Permet de
+// brancher le vrai backend SANS toucher aux composants, types ni mocks (les 93
+// tests tournent en mock, donc inchangés). Les écarts de forme sont absorbés ici.
+// ────────────────────────────────────────────────────────────────────────────
+
+interface BackendAuthResult {
+  token: string;
+  user: { id: string; phone: string | null; email: string | null; role: string };
+}
+
+// Stocke email+password entre les 2 étapes du flux frontend (register → verify-otp)
+// que le backend regroupe en request-otp + register(vérifie+crée).
+const pendingReg = new Map<string, { email: string; password: string }>();
+
+function toTokenResponse(r: BackendAuthResult): AuthTokenResponse {
+  return {
+    accessToken: r.token,
+    user: {
+      id: r.user.id,
+      phone: r.user.phone ?? '',
+      email: r.user.email,
+      role: normalizeRole(r.user.role),
+    },
+  };
+}
+
+// Backend GET /addresses/:code → forme PublicAddress attendue par l'UI.
+function toPublicShape(d: {
+  code: string;
+  category: AddressCategory;
+  quartier: { name: string; prefix: string; id?: string };
+  gps: { lat: number; lng: number };
+  photoUrl: string;
+  steps: string[];
+  assembledText: string;
+  averageRating: number | null;
+  ratingCount: number;
+  fieldNotes?: { message: string; createdAt: string }[];
+  createdAt: string;
+}): PublicAddress {
+  return {
+    code: d.code,
+    category: d.category,
+    quartier: d.quartier,
+    gps: d.gps,
+    photoUrl: d.photoUrl,
+    instructions: { steps: d.steps, assembledText: d.assembledText },
+    reliabilityScore: null,
+    averageRating: d.averageRating,
+    ratingCount: d.ratingCount,
+    visitCount: 0,
+    isActive: true,
+    mapDiscoverable: true,
+    myRating: null,
+    createdAt: d.createdAt,
+  };
+}
+
+function deriveStatus(lifecycle: string, rev: string | null, published: boolean): AddressStatus {
+  if (lifecycle === 'DESACTIVEE') return 'DESACTIVEE';
+  if (rev === 'REJETEE') return 'REJETEE';
+  if (rev === 'EN_ATTENTE_VALIDATION' && !published) return 'EN_ATTENTE_VALIDATION';
+  if (published || rev === 'PUBLIEE' || rev === 'ARCHIVEE') return 'PUBLIEE';
+  return 'EN_ATTENTE_VALIDATION';
+}
+
+// Shape renvoyée par le backend `GET /moderation/revisions`.
+interface BackendPendingRevision {
+  id: string;
+  addressCode: string;
+  category: AddressCategory;
+  steps: string[];
+  assembledText: string;
+  photoUrl: string;
+  gps: { lat: number; lng: number };
+  gpsAccuracyMeters: number;
+  quartierName: string;
+  ownerPhoneMasked: string;
+  createdAt: string;
+  isFirstPublication: boolean;
+}
+
+function fetchPendingRevisions(): Promise<BackendPendingRevision[]> {
+  return backendFetch<BackendPendingRevision[]>('/moderation/revisions', { auth: 'jwt' });
+}
+
+function toQueueItem(r: BackendPendingRevision) {
+  return {
+    code: r.addressCode,
+    quartierName: r.quartierName,
+    ownerPhoneMasked: r.ownerPhoneMasked,
+    submittedAt: r.createdAt,
+    gps: r.gps,
+    gpsAccuracyMeters: r.gpsAccuracyMeters,
+    photoUrl: r.photoUrl,
+    assembledText: r.assembledText,
+    steps: r.steps,
+    isFresh: r.isFirstPublication,
+  };
+}
+
+async function realFetch<T>(path: string, options: FetchOptions): Promise<T> {
+  const method = (options.method ?? 'GET').toUpperCase();
+  const body = options.body as Record<string, unknown> | undefined;
+  const T = <X>(v: X) => v as unknown as T;
+
+  // ── Repères Overpass (route interne) : best-effort, vide si non disponible ──
+  if (path.startsWith('/internal/nearby-landmark')) return T([]);
+
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  if (path === '/auth/register' && method === 'POST') {
+    // Étape 1 du frontend = envoi de l'OTP. On mémorise email+password.
+    const phone = String(body?.phone ?? '');
+    pendingReg.set(phone, {
+      email: String(body?.email ?? ''),
+      password: String(body?.password ?? ''),
+    });
+    await backendFetch('/auth/request-otp', { method: 'POST', body: { phone } });
+    return T({ message: 'OTP envoyé', expiresIn: 300 });
+  }
+  if (path === '/auth/request-otp' && method === 'POST') {
+    await backendFetch('/auth/request-otp', { method: 'POST', body });
+    return T({ message: 'OTP envoyé', expiresIn: 300 });
+  }
+  if (path === '/auth/verify-otp' && method === 'POST') {
+    // Étape 2 = création effective du compte (backend register).
+    const phone = String(body?.phone ?? '');
+    const pending = pendingReg.get(phone);
+    const res = await backendFetch<BackendAuthResult>('/auth/register', {
+      method: 'POST',
+      body: {
+        phone,
+        code: body?.code,
+        email: pending?.email,
+        password: pending?.password,
+      },
+    });
+    pendingReg.delete(phone);
+    return T(toTokenResponse(res));
+  }
+  if (path === '/auth/login' && method === 'POST') {
+    const res = await backendFetch<BackendAuthResult>('/auth/login', { method: 'POST', body });
+    return T(toTokenResponse(res));
+  }
+  if (path === '/auth/forgot-password' && method === 'POST') {
+    await backendFetch('/auth/password-reset/request', { method: 'POST', body });
+    return T({ message: 'Si un compte existe, un code a été envoyé.', expiresIn: 300 });
+  }
+  if (path === '/auth/reset-password' && method === 'POST') {
+    const res = await backendFetch<BackendAuthResult>('/auth/password-reset', { method: 'POST', body });
+    return T(toTokenResponse(res));
+  }
+  if (path === '/auth/admin/login' && method === 'POST') {
+    const res = await backendFetch<BackendAuthResult>('/auth/login', { method: 'POST', body });
+    return T(toTokenResponse(res));
+  }
+  // Reset self-service mod/admin par email : hors périmètre backend (pas de
+  // transport email). No-op gracieux — la réinit. réelle passe par l'admin.
+  if (path === '/auth/admin/forgot-password' && method === 'POST') return T({ sent: true });
+  if (path === '/auth/admin/reset-password' && method === 'POST') return T({ reset: true });
+
+  // ── Profil / compte ─────────────────────────────────────────────────────────
+  if (path === '/users/me' && method === 'GET') {
+    const u = await backendFetch<{
+      id: string; phone: string | null; email: string | null;
+      firstName: string | null; lastName: string | null; role: string;
+    }>('/auth/me', { auth: 'jwt' });
+    return T({
+      id: u.id, phone: u.phone ?? '', email: u.email,
+      firstName: u.firstName, lastName: u.lastName,
+      role: normalizeRole(u.role), createdAt: '',
+    });
+  }
+  if (path === '/users/me' && method === 'PATCH') {
+    const u = await backendFetch<{
+      id: string; phone: string | null; email: string | null;
+      firstName: string | null; lastName: string | null; role: string;
+    }>('/auth/profile', { method: 'PATCH', body, auth: 'jwt' });
+    return T({
+      id: u.id, phone: u.phone ?? '', email: u.email,
+      firstName: u.firstName, lastName: u.lastName,
+      role: normalizeRole(u.role), createdAt: '',
+    });
+  }
+  if (path === '/users/me' && method === 'DELETE') {
+    const me = await backendFetch<{ phone: string | null }>('/auth/me', { auth: 'jwt' });
+    const r = await backendFetch<{ deleted: boolean; anonymizedAt: string }>('/auth/account', {
+      method: 'DELETE', body: { phone: me.phone }, auth: 'jwt',
+    });
+    // Anonymisation immédiate (pas de purge différée) — on expose la date réelle.
+    return T({ deleted: r.deleted, purgeScheduledAt: r.anonymizedAt });
+  }
+  if (path === '/users/me/phone/request-change' && method === 'POST') {
+    await backendFetch('/auth/request-otp', { method: 'POST', body: { phone: body?.newPhone } });
+    return T({ sent: true });
+  }
+  if (path === '/users/me/phone/confirm-change' && method === 'POST') {
+    await backendFetch('/auth/phone', {
+      method: 'PATCH', body: { phone: body?.newPhone, code: body?.code }, auth: 'jwt',
+    });
+    return T({ updated: true, newPhone: body?.newPhone });
+  }
+
+  // ── Notifications & push ─────────────────────────────────────────────────────
+  if (path === '/users/me/notifications' && method === 'GET') {
+    const rows = await backendFetch<Array<{
+      id: string; type: string; message: string;
+      addressCode: string | null; readAt: string | null; createdAt: string;
+    }>>('/notifications', { auth: 'jwt' });
+    const kindMap: Record<string, Notification['kind']> = {
+      ADDRESS_VALIDATED: 'address_validated',
+      ADDRESS_REJECTED: 'address_rejected',
+      ADDRESS_DEACTIVATED: 'address_disabled',
+      RELIABILITY_WARNING: 'system',
+    };
+    return T(rows.map((n) => ({
+      id: n.id,
+      kind: kindMap[n.type] ?? 'system',
+      message: n.message,
+      addressCode: n.addressCode,
+      read: n.readAt != null,
+      createdAt: n.createdAt,
+    })));
+  }
+  if (path === '/users/me/notifications/read-all' && method === 'POST') {
+    return T(await backendFetch('/notifications/read-all', { method: 'POST', auth: 'jwt' }));
+  }
+  if (path === '/push-subscriptions' && method === 'POST') {
+    await backendFetch('/notifications/subscribe', { method: 'POST', body, auth: 'jwt' });
+    return T({ subscribed: true });
+  }
+  if (path === '/push-subscriptions' && method === 'DELETE') {
+    await backendFetch('/notifications/unsubscribe', { method: 'DELETE', body, auth: 'jwt' });
+    return T({ unsubscribed: true });
+  }
+
+  // ── Quartiers (référentiel public) ──────────────────────────────────────────
+  if (path === '/quartiers' && method === 'GET') {
+    const qs = await backendFetch<Array<{ id: string; name: string; prefix: string }>>('/quartiers');
+    return T(qs.map((q) => ({ ...q, isActive: true })));
+  }
+
+  // ── Carte de découverte ──────────────────────────────────────────────────────
+  if (path.startsWith('/map/addresses') && method === 'GET') {
+    const url = new URL(path, 'http://x.local');
+    const bbox = url.searchParams.get('bbox');
+    const cats = url.searchParams.get('categories');
+    const q = new URLSearchParams();
+    if (bbox) {
+      const [west, south, east, north] = bbox.split(',');
+      q.set('north', north); q.set('south', south); q.set('east', east); q.set('west', west);
+    }
+    // Le backend filtre par une seule catégorie ; on prend la première fournie.
+    if (cats) q.set('category', cats.split(',')[0]);
+    const markers = await backendFetch<Array<{
+      code: string; category: AddressCategory; gps: { lat: number; lng: number };
+      muted: boolean; preview: { photoUrl: string; code: string } | null;
+    }>>(`/map/addresses?${q.toString()}`);
+    return T({
+      items: markers.map((m) => ({
+        code: m.code, lat: m.gps.lat, lng: m.gps.lng, category: m.category,
+        muted: m.muted,
+        preview: m.preview ? { photoUrl: m.preview.photoUrl, quartierName: '' } : null,
+      })),
+    });
+  }
+
+  // ── Adresses : lecture publique / propriétaire ──────────────────────────────
+  const codeResolve = path.match(/^\/addresses\/([^/]+)\/resolve$/);
+  const codePublic = path.match(/^\/addresses\/([^/]+)$/);
+  if (method === 'GET' && (codeResolve || codePublic)) {
+    // Vue propriétaire ET vue visiteur passent par l'endpoint public (le helper
+    // ownerAddress visait /resolve, réservé aux clés API — corrigé ici).
+    const code = (codeResolve ?? codePublic)![1];
+    const d = await backendFetch<Parameters<typeof toPublicShape>[0]>(`/addresses/${code}`);
+    return T(toPublicShape(d));
+  }
+  if ((path === '/addresses' || path === '/addresses/mine') && method === 'GET') {
+    const rows = await backendFetch<Array<{
+      code: string; lifecycle: string; mapDiscoverable: boolean; published: boolean;
+      category: AddressCategory | null; currentRevisionStatus: string | null; createdAt: string;
+    }>>('/addresses/mine', { auth: 'jwt' });
+    return T(rows.map((a) => ({
+      code: a.code,
+      quartierId: '',
+      category: (a.category ?? 'AUTRE') as AddressCategory,
+      gps: { lat: 0, lng: 0 },
+      photoUrl: '',
+      instructions: { steps: [], assembledText: '' },
+      reliabilityScore: null,
+      averageRating: null,
+      ratingCount: 0,
+      visitCount: 0,
+      isActive: a.lifecycle !== 'DESACTIVEE',
+      status: deriveStatus(a.lifecycle, a.currentRevisionStatus, a.published),
+      mapDiscoverable: a.mapDiscoverable,
+      createdAt: a.createdAt,
+    })));
+  }
+  const codeRevisions = path.match(/^\/addresses\/([^/]+)\/revisions$/);
+  if (codeRevisions && method === 'GET') {
+    const code = codeRevisions[1];
+    const revs = await backendFetch<Array<{
+      id: string; status: string; category: AddressCategory; steps: string[];
+      assembledText: string; photoUrl: string; rejectionReason: string | null;
+      isPublished: boolean; createdAt: string;
+    }>>(`/addresses/${code}/revisions`, { auth: 'jwt' });
+    return T({
+      items: revs.map((r, i) => ({
+        id: r.id,
+        version: revs.length - i,
+        category: r.category,
+        gps: { lat: 0, lng: 0 },
+        photoUrl: r.photoUrl,
+        instructions: { steps: r.steps, assembledText: r.assembledText },
+        source: 'OWNER_EDIT' as const,
+        authorPhoneMasked: '',
+        comment: r.rejectionReason,
+        createdAt: r.createdAt,
+      })),
+    });
+  }
+
+  // ── Adresses : écriture propriétaire ────────────────────────────────────────
+  if (path === '/addresses' && method === 'POST') {
+    return T(await backendFetch('/addresses', { method: 'POST', body, auth: 'jwt' }));
+  }
+  const codeOnly = path.match(/^\/addresses\/([^/]+)$/);
+  if (codeOnly && method === 'PATCH') {
+    const code = codeOnly[1];
+    // Toggle découverte ⇒ endpoint dédié ; sinon nouvelle révision.
+    if (typeof body?.mapDiscoverable === 'boolean'
+      && !body?.photoUrl && !body?.instructions && !body?.coordinates) {
+      await backendFetch(`/addresses/${code}/discoverable`, {
+        method: 'PATCH', body: { discoverable: body.mapDiscoverable }, auth: 'jwt',
+      });
+      return T({ updated: true });
+    }
+    const instr = body?.instructions as { steps: string[] } | undefined;
+    await backendFetch(`/addresses/${code}`, {
+      method: 'PATCH',
+      body: { steps: instr?.steps, photoUrl: body?.photoUrl, category: body?.category },
+      auth: 'jwt',
+    });
+    return T({ updated: true });
+  }
+  if (codeOnly && method === 'DELETE') {
+    const code = codeOnly[1];
+    const r = await backendFetch<{ code: string; lifecycle: string }>(`/addresses/${code}`, {
+      method: 'DELETE', auth: 'jwt',
+    });
+    return T({ deactivated: r.lifecycle === 'DESACTIVEE', deactivatedAt: new Date().toISOString() });
+  }
+
+  // ── Évaluation / signalement / contribution / notes terrain ──────────────────
+  const codeRating = path.match(/^\/addresses\/([^/]+)\/rating$/);
+  if (codeRating && method === 'PUT') {
+    const code = codeRating[1];
+    const r = await backendFetch<{ averageRating: number | null; ratingCount: number }>(
+      `/addresses/${code}/rate`,
+      { method: 'POST', body: { stars: body?.score }, auth: 'jwt' },
+    );
+    return T({ addressCode: code, score: Number(body?.score), newAverage: r.averageRating, ratingCount: r.ratingCount });
+  }
+  const codeReports = path.match(/^\/addresses\/([^/]+)\/reports$/);
+  if (codeReports && method === 'POST') {
+    const r = await backendFetch<{ reportId: string; status: string }>(
+      `/addresses/${codeReports[1]}/report`, { method: 'POST', body, auth: 'jwt' },
+    );
+    return T(r);
+  }
+  const codeContrib = path.match(/^\/addresses\/([^/]+)\/contributions$/);
+  if (codeContrib && method === 'POST') {
+    // Le frontend envoie { circulationDirection?, entrySide? } → message libre backend.
+    const b = body as { circulationDirection?: string; entrySide?: string } | undefined;
+    const message = [b?.circulationDirection, b?.entrySide].filter(Boolean).join(' — ') || ' ';
+    const r = await backendFetch<{ contributionId: string; status: string }>(
+      `/addresses/${codeContrib[1]}/contribution`, { method: 'POST', body: { message }, auth: 'jwt' },
+    );
+    return T(r);
+  }
+  const codeFieldNotes = path.match(/^\/addresses\/([^/]+)\/field-notes$/);
+  if (codeFieldNotes && method === 'GET') {
+    const code = codeFieldNotes[1];
+    const d = await backendFetch<{ fieldNotes?: { message: string; createdAt: string }[] }>(`/addresses/${code}`);
+    return T({
+      items: (d.fieldNotes ?? []).map((n, i) => ({
+        id: `fn_${code}_${i}`, addressCode: code, message: n.message,
+        authorPhoneMasked: '', createdAt: n.createdAt,
+      })),
+    });
+  }
+  if (codeFieldNotes && method === 'POST') {
+    const code = codeFieldNotes[1];
+    const r = await backendFetch<{ contributionId: string }>(
+      `/addresses/${code}/contribution`, { method: 'POST', body, auth: 'jwt' },
+    );
+    return T({
+      id: r.contributionId, addressCode: code, message: String((body as { message?: string })?.message ?? ''),
+      authorPhoneMasked: '', createdAt: new Date().toISOString(),
+    });
+  }
+  const codeVote = path.match(/^\/addresses\/([^/]+)\/reliability\/vote$/);
+  if (codeVote && method === 'POST') return T({ recorded: true }); // legacy, non câblé
+
+  // ── Visites ──────────────────────────────────────────────────────────────────
+  if (path === '/visits/start' && method === 'POST') {
+    const b = body as { addressCode: string; startedAt: string };
+    const r = await backendFetch<{ visitId: string }>('/visits/start', {
+      method: 'POST', body: { addressCode: b.addressCode, departAt: b.startedAt },
+    });
+    return T({ visitId: r.visitId, startedAt: b.startedAt });
+  }
+  if (path === '/visits/confirm' && method === 'POST') {
+    return T(await backendFetch('/visits/confirm', { method: 'POST', body }));
+  }
+
+  // ── Upload Cloudinary ────────────────────────────────────────────────────────
+  if (path === '/upload/signature' && method === 'POST') {
+    return T(await backendFetch('/upload/signature', { method: 'POST', auth: 'jwt' }));
+  }
+
+  // ── Administration : routes alignées sur le backend existant ────────────────
+  if (path === '/admin/stats' && method === 'GET') {
+    return T(await backendFetch('/admin/stats', { auth: 'jwt' }));
+  }
+  if (path === '/admin/quartiers' && method === 'GET') {
+    return T(await backendFetch('/admin/quartiers', { auth: 'jwt' }));
+  }
+  if (path === '/admin/quartiers' && method === 'POST') {
+    return T(await backendFetch('/admin/quartiers', { method: 'POST', body, auth: 'jwt' }));
+  }
+  const adminQuartier = path.match(/^\/admin\/quartiers\/([^/]+)$/);
+  if (adminQuartier && method === 'PATCH') {
+    return T(await backendFetch(`/admin/quartiers/${adminQuartier[1]}`, { method: 'PATCH', body, auth: 'jwt' }));
+  }
+  if (path.startsWith('/admin/addresses') && method === 'GET') {
+    // Réutilise la pagination/filtre backend (status → lifecycle).
+    const url = new URL(path, 'http://x.local');
+    const q = new URLSearchParams();
+    const search = url.searchParams.get('search');
+    const status = url.searchParams.get('status');
+    if (search) q.set('code', search);
+    if (status === 'inactive') q.set('lifecycle', 'DESACTIVEE');
+    if (status === 'active') q.set('lifecycle', 'ACTIVE');
+    for (const k of ['page', 'limit']) {
+      const v = url.searchParams.get(k);
+      if (v) q.set(k, v);
+    }
+    const detail = url.pathname.match(/^\/admin\/addresses\/([^/]+)$/);
+    if (!detail) {
+      const res = await backendFetch<{ items: Array<{ code: string; quartier: { name: string } | null; lifecycle: string; createdAt: string }>; total: number; page: number; limit: number }>(
+        `/admin/addresses?${q.toString()}`, { auth: 'jwt' },
+      );
+      return T({
+        items: res.items.map((a) => ({
+          code: a.code, quartier: a.quartier, ownerPhone: '••••',
+          isActive: a.lifecycle !== 'DESACTIVEE', reliabilityScore: null,
+          reportCount: 0, createdAt: a.createdAt,
+        })),
+        total: res.total, page: res.page, limit: res.limit,
+      });
+    }
+  }
+  const adminDeactivate = path.match(/^\/admin\/addresses\/([^/]+)\/deactivate$/);
+  if (adminDeactivate && method === 'PATCH') {
+    await backendFetch(`/admin/addresses/${adminDeactivate[1]}/deactivate`, { method: 'PATCH', body, auth: 'jwt' });
+    return T({ deactivated: true });
+  }
+  if (path === '/admin/quartiers' && method === 'GET') {
+    return T(await backendFetch('/admin/quartiers', { auth: 'jwt' }));
+  }
+  if (path === '/admin/api-keys' && method === 'POST') {
+    return T(await backendFetch('/admin/api-keys', { method: 'POST', body, auth: 'jwt' }));
+  }
+  const adminApiKey = path.match(/^\/admin\/api-keys\/([^/]+)$/);
+  if (adminApiKey && method === 'PATCH') {
+    const k = await backendFetch<{ id: string; status: string; revokedAt: string }>(
+      `/admin/api-keys/${adminApiKey[1]}`, { method: 'DELETE', auth: 'jwt' },
+    );
+    return T({ revoked: k.status === 'REVOKED', revokedAt: k.revokedAt });
+  }
+  if (path === '/admin/reports' && method === 'GET') {
+    return T(await backendFetch('/moderation/reports', { auth: 'jwt' }));
+  }
+  if (path === '/admin/contributions' && method === 'GET') {
+    return T(await backendFetch('/moderation/contributions', { auth: 'jwt' }));
+  }
+  if (path === '/admin/moderators' && method === 'POST') {
+    // Le backend crée un modérateur par email+password (pas par téléphone).
+    return T(await backendFetch('/admin/moderators', { method: 'POST', body, auth: 'jwt' }));
+  }
+
+  // ── File de modération (révisions) ──────────────────────────────────────────
+  // Le frontend raisonne en file unifiée clé = code adresse ; le backend expose
+  // trois files distinctes clé = id. Une seule révision est EN_ATTENTE par
+  // adresse, donc code ↔ révision est 1:1 et résoluble depuis la liste.
+  if (path === '/admin/moderation/stats' && method === 'GET') {
+    const [revs, reports, contribs] = await Promise.all([
+      backendFetch<unknown[]>('/moderation/revisions', { auth: 'jwt' }),
+      backendFetch<unknown[]>('/moderation/reports', { auth: 'jwt' }),
+      backendFetch<unknown[]>('/moderation/contributions', { auth: 'jwt' }),
+    ]);
+    return T({
+      pendingAddresses: revs.length,
+      pendingReports: reports.length,
+      pendingContributions: contribs.length,
+    });
+  }
+  if (path === '/admin/moderation/queue' && method === 'GET') {
+    const revs = await fetchPendingRevisions();
+    return T(revs.map(toQueueItem));
+  }
+  const modQueueItem = path.match(/^\/admin\/moderation\/queue\/([^/]+)$/);
+  if (modQueueItem && method === 'GET') {
+    const code = modQueueItem[1].toUpperCase();
+    const rev = (await fetchPendingRevisions()).find((r) => r.addressCode.toUpperCase() === code);
+    if (!rev) throw new ApiError(404, 'REVISION_NOT_FOUND', 'Révision introuvable dans la file.');
+    return T(toQueueItem(rev));
+  }
+  if (modQueueItem && method === 'POST') {
+    const code = modQueueItem[1].toUpperCase();
+    const rev = (await fetchPendingRevisions()).find((r) => r.addressCode.toUpperCase() === code);
+    if (!rev) throw new ApiError(404, 'REVISION_NOT_FOUND', 'Révision introuvable dans la file.');
+    const decision = body as { status: 'approved' | 'rejected'; reason?: string | null };
+    if (decision.status === 'approved') {
+      await backendFetch(`/moderation/revisions/${rev.id}/approve`, { method: 'PATCH', auth: 'jwt' });
+    } else {
+      await backendFetch(`/moderation/revisions/${rev.id}/reject`, {
+        method: 'PATCH', body: { reason: decision.reason ?? 'Non conforme' }, auth: 'jwt',
+      });
+    }
+    return T({ decided: true });
+  }
+
+  // Reste du back-office (listes habitants/modérateurs/clés, détails) :
+  // endpoints backend à compléter — signalé explicitement.
+  throw new ApiError(
+    501, 'ADMIN_ENDPOINT_NOT_WIRED',
+    `Endpoint back-office non encore raccordé au backend réel : ${method} ${path}.`,
+  );
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -917,18 +1467,6 @@ async function mockFetch<T>(path: string, options: FetchOptions): Promise<T> {
     };
     return detail as unknown as T;
   }
-  const adminReactivateMatch = path.match(
-    /^\/admin\/addresses\/([^/]+)\/reactivate$/,
-  );
-  if (adminReactivateMatch && method === 'PATCH') {
-    const code = adminReactivateMatch[1].toUpperCase();
-    const found = addresses.find((a) => a.code === code);
-    if (found) {
-      found.isActive = true;
-      found.deactivatedAt = null;
-    }
-    return { reactivated: true } as unknown as T;
-  }
 
   // --- Habitants ---
   if (path.startsWith('/admin/habitants') && method === 'GET') {
@@ -1141,11 +1679,6 @@ export const api = {
       method: 'POST',
       auth: 'jwt',
     }),
-  voteReliability: (code: string, isPositive: boolean) =>
-    apiFetch<{ recorded: boolean }>(
-      `/addresses/${encodeURIComponent(code)}/reliability/vote`,
-      { method: 'POST', body: { isPositive } },
-    ),
   reportAddress: (code: string, message: string) =>
     apiFetch<{ reportId: string; status: string }>(
       `/addresses/${encodeURIComponent(code)}/reports`,
@@ -1320,11 +1853,6 @@ export const api = {
   adminDeactivateAddress: (code: string) =>
     apiFetch<{ deactivated: boolean }>(
       `/admin/addresses/${encodeURIComponent(code)}/deactivate`,
-      { method: 'PATCH', auth: 'jwt' },
-    ),
-  adminReactivateAddress: (code: string) =>
-    apiFetch<{ reactivated: boolean }>(
-      `/admin/addresses/${encodeURIComponent(code)}/reactivate`,
       { method: 'PATCH', auth: 'jwt' },
     ),
   adminAddressDetail: (code: string) =>

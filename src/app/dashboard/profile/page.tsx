@@ -196,7 +196,7 @@ export default function ProfilePage() {
       logout();
       toast.show({
         message:
-          'Votre compte est supprimé. Vos données seront purgées sous 30 jours.',
+          'Votre compte est supprimé et vos données personnelles ont été anonymisées immédiatement.',
         variant: 'success',
       });
       router.push('/');
