@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { MapPin, Navigation, QrCode, type LucideIcon } from 'lucide-react';
 import { Logo } from '@/components/ui/Logo';
 
@@ -28,7 +29,9 @@ export function AuthBrandPanel() {
       />
 
       <div className="relative z-10">
-        <Logo size="lg" tone="inverse" />
+        <Link href="/" aria-label="Accueil" className="inline-flex w-fit">
+          <Logo size="lg" tone="inverse" />
+        </Link>
       </div>
 
       <div className="relative z-10 flex flex-1 items-center py-10">
