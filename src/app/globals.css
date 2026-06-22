@@ -368,12 +368,6 @@
   animation: skeleton-shimmer 1.5s ease-in-out infinite;
 }
 
-@keyframes toast-in {
-  from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.animate-toast-in { animation: toast-in 200ms ease-out; }
-
 @keyframes drawer-in {
   from { transform: translateX(-100%); }
   to   { transform: translateX(0); }
@@ -459,7 +453,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .animate-step-in,
-  .animate-toast-in,
   .animate-drawer-in,
   .animate-fade-up,
   .animate-rise,
