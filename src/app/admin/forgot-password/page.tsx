@@ -48,13 +48,9 @@ export default function BackofficeForgotPasswordPage() {
         <header className="flex flex-col items-center gap-3 text-center">
           <span
             aria-hidden="true"
-            className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-primary-surface text-primary ring-1 ring-primary/15"
+            className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-canvas-deep text-accent ring-1 ring-accent/30"
           >
-            {sent ? (
-              <CheckCircle2 className="h-7 w-7" />
-            ) : (
-              <Mail className="h-7 w-7" />
-            )}
+            {sent ? <CheckCircle2 className="h-7 w-7" /> : <Mail className="h-7 w-7" />}
           </span>
           <h1 className="font-display font-bold text-2xl text-text-primary">
             {sent ? 'Lien envoyé' : 'Mot de passe oublié'}
@@ -69,7 +65,7 @@ export default function BackofficeForgotPasswordPage() {
         {!sent ? (
           <form
             onSubmit={handleSubmit}
-            className="w-full bg-surface border border-border rounded-xl shadow-md p-5 sm:p-6 flex flex-col gap-5 animate-fade-up"
+            className="w-full card p-5 sm:p-6 flex flex-col gap-5 animate-fade-up"
             noValidate
           >
             <Input
@@ -94,7 +90,7 @@ export default function BackofficeForgotPasswordPage() {
             </Button>
           </form>
         ) : (
-          <div className="w-full bg-surface border border-border rounded-xl shadow-md p-5 sm:p-6 flex flex-col gap-3 animate-fade-up">
+          <div className="w-full card p-5 sm:p-6 animate-fade-up">
             <p className="text-sm text-text-muted">
               Pensez à vérifier vos courriers indésirables si vous ne le trouvez pas.
             </p>
@@ -102,7 +98,7 @@ export default function BackofficeForgotPasswordPage() {
         )}
 
         <Link
-          href="/login"
+          href="/admin/login"
           className="text-sm text-text-muted hover:text-text-primary inline-flex items-center gap-1 self-center"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Retour à la connexion

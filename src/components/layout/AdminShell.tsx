@@ -113,16 +113,22 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const isAdmin = user?.role === 'ADMIN';
   const isBackoffice = user?.role === 'ADMIN' || user?.role === 'MODERATOR';
 
+  // Routes d'auth back-office (login / forgot-password / reset-password) :
+  // publiques, en dehors de la garde et du shell.
+  const isAuthRoute = /^\/admin\/(login|forgot-password|reset-password)$/.test(
+    pathname,
+  );
+
   useEffect(() => {
-    if (!isReady) return;
+    if (isAuthRoute || !isReady) return;
     if (!isAuthenticated) {
-      router.replace('/login');
+      router.replace('/admin/login');
       return;
     }
     if (!isBackoffice) {
       router.replace('/dashboard');
     }
-  }, [isReady, isAuthenticated, isBackoffice, router]);
+  }, [isAuthRoute, isReady, isAuthenticated, isBackoffice, router]);
 
   // Refresh the badge counts whenever we navigate within /admin so freshly
   // resolved items update the chips without a hard reload.
@@ -156,6 +162,11 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- ferme le drawer au changement de route
     setDrawerOpen(false);
   }, [pathname]);
+
+  // Pages d'auth back-office : rendues nues (sans shell ni garde).
+  if (isAuthRoute) {
+    return <>{children}</>;
+  }
 
   if (!isReady || !isAuthenticated || !isBackoffice) {
     return (

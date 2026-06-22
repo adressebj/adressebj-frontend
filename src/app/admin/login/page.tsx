@@ -22,8 +22,7 @@ export default function BackofficeLoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
 
-  // Déjà connecté en back-office → redirige immédiatement vers /admin.
-  // Un Habitant qui atterrit ici n'est pas redirigé (il peut basculer).
+  // Déjà connecté en back-office → /admin.
   useEffect(() => {
     if (isReady && isAuthenticated && (isModerator || isAdmin)) {
       router.replace('/admin');
@@ -74,21 +73,21 @@ export default function BackofficeLoginPage() {
         <header className="flex flex-col items-center gap-3 text-center">
           <span
             aria-hidden="true"
-            className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-primary-surface text-primary ring-1 ring-primary/15"
+            className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-canvas-deep text-accent ring-1 ring-accent/30"
           >
             <ShieldCheck className="h-7 w-7" />
           </span>
           <h1 className="font-display font-bold text-2xl text-text-primary">
-            Connexion back-office
+            Console d’administration
           </h1>
           <p className="text-sm text-text-muted max-w-xs">
-            Espace réservé aux modérateurs et administrateurs.
+            Accès réservé. Connectez-vous avec vos identifiants professionnels.
           </p>
         </header>
 
         <form
           onSubmit={handleSubmit}
-          className="w-full bg-surface border border-border rounded-xl shadow-md p-5 sm:p-6 flex flex-col gap-5 animate-fade-up"
+          className="w-full card p-5 sm:p-6 flex flex-col gap-5 animate-fade-up"
           noValidate
         >
           <Input
@@ -133,17 +132,12 @@ export default function BackofficeLoginPage() {
             Se connecter
           </Button>
 
-          <div className="flex justify-between items-center text-xs">
-            <Link
-              href="/forgot-password"
-              className="font-medium text-primary hover:underline"
-            >
-              Mot de passe oublié ?
-            </Link>
-            <Link href="/auth" className="text-text-muted hover:text-text-primary">
-              Espace Habitant
-            </Link>
-          </div>
+          <Link
+            href="/admin/forgot-password"
+            className="self-center text-xs font-medium text-primary hover:underline"
+          >
+            Mot de passe oublié ?
+          </Link>
         </form>
       </div>
     </div>

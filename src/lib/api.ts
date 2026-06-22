@@ -282,6 +282,48 @@ async function mockFetch<T>(path: string, options: FetchOptions): Promise<T> {
     } satisfies AuthTokenResponse as unknown as T;
   }
 
+  // Mot de passe oublié Habitant — demande d'OTP (non-énumérant) + reset.
+  if (path === '/auth/forgot-password' && method === 'POST') {
+    const phone = (options.body as { phone?: string } | undefined)?.phone ?? '';
+    if (!/^\+229\d{8}$/.test(phone)) {
+      throw new ApiError(400, 'INVALID_PHONE_FORMAT', 'Numéro de téléphone invalide.');
+    }
+    // Réponse non-énumérante : on ne révèle jamais si le compte existe.
+    return {
+      message: 'Si un compte existe, un code a été envoyé.',
+      expiresIn: 300,
+    } as unknown as T;
+  }
+  if (path === '/auth/reset-password' && method === 'POST') {
+    const body = options.body as
+      | { phone?: string; code?: string; password?: string }
+      | undefined;
+    const phone = body?.phone ?? '';
+    const password = body?.password ?? '';
+    const account = habitantAccounts.find((a) => a.phone === phone);
+    // Compte inexistant OU OTP faux → même erreur (non-énumérant).
+    if (!account || body?.code !== '123456') {
+      throw new ApiError(401, 'INVALID_OR_EXPIRED_OTP', 'Code incorrect ou expiré.');
+    }
+    if (password.length < 8) {
+      throw new ApiError(
+        400,
+        'PASSWORD_TOO_SHORT',
+        'Mot de passe trop court (8 caractères minimum).',
+      );
+    }
+    account.password = password;
+    return {
+      accessToken: buildMockJwt('CREATOR'),
+      user: {
+        id: account.id,
+        phone: account.phone,
+        email: account.email,
+        role: 'CREATOR' as Role,
+      },
+    } satisfies AuthTokenResponse as unknown as T;
+  }
+
   // Connexion back-office (Modérateur / Admin) — email + password.
   if (path === '/auth/admin/login' && method === 'POST') {
     const body = options.body as { email?: string; password?: string } | undefined;
@@ -1055,6 +1097,16 @@ export const api = {
     apiFetch<AuthTokenResponse>('/auth/login', {
       method: 'POST',
       body: { phone, password } satisfies HabitantLoginInput,
+    }),
+  forgotPasswordHabitant: (phone: string) =>
+    apiFetch<{ message: string; expiresIn: number }>('/auth/forgot-password', {
+      method: 'POST',
+      body: { phone },
+    }),
+  resetPasswordHabitant: (phone: string, code: string, password: string) =>
+    apiFetch<AuthTokenResponse>('/auth/reset-password', {
+      method: 'POST',
+      body: { phone, code, password },
     }),
   adminLogin: (email: string, password: string) =>
     apiFetch<AuthTokenResponse>('/auth/admin/login', {

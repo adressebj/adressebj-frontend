@@ -24,7 +24,7 @@ export function useRequireAdmin(): { isReady: boolean; isAdmin: boolean } {
   useEffect(() => {
     if (!isReady) return;
     if (!isAuthenticated) {
-      router.replace('/login');
+      router.replace('/admin/login');
       return;
     }
     if (!isAdmin) {
