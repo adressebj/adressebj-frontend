@@ -92,9 +92,9 @@ type Auth = 'jwt' | 'apiKey' | 'none';
 interface FetchOptions extends Omit<RequestInit, 'body'> {
   auth?: Auth;
   body?: unknown;
-  /** Route interne (hors contrat public versionné) : appelée sur
-      `${baseUrl}<path>` au lieu de `${baseUrl}/api/v1<path>`. Réservée aux
-      helpers du produit (ex. repères de création), absente du Swagger. */
+  /** Route interne (hors contrat public) : appelée sur `${baseUrl}<path>` au
+      lieu de `${baseUrl}/api<path>`. Réservée aux helpers du produit
+      (ex. repères de création), absente du Swagger. */
   internal?: boolean;
 }
 
@@ -127,7 +127,7 @@ function jwtHeader(): string | null {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Couche bas niveau : appel HTTP au vrai backend (contrat versionné /api/v1).
+// Couche bas niveau : appel HTTP au vrai backend (préfixe global /api).
 // Déballe l'enveloppe { data } et propage les ApiError (code machine).
 // ────────────────────────────────────────────────────────────────────────────
 async function backendFetch<T>(path: string, options: FetchOptions = {}): Promise<T> {
@@ -146,7 +146,7 @@ async function backendFetch<T>(path: string, options: FetchOptions = {}): Promis
     if (header) finalHeaders.Authorization = header;
   }
 
-  const res = await fetch(`${baseUrl}${internal ? '' : '/api/v1'}${path}`, {
+  const res = await fetch(`${baseUrl}${internal ? '' : '/api'}${path}`, {
     ...rest,
     headers: finalHeaders,
     body: body !== undefined ? JSON.stringify(body) : undefined,
