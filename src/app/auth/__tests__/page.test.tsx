@@ -112,4 +112,39 @@ describe('AuthPage', () => {
 
     expect(screen.queryByLabelText(/numéro de téléphone/i)).not.toBeInTheDocument();
   });
+
+  it('réinitialise le mot de passe : téléphone → OTP → nouveau mot de passe → connecté', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole('button', { name: /mot de passe oublié/i }));
+    await user.type(screen.getByLabelText(/numéro de téléphone/i), '60000000');
+    await user.click(screen.getByRole('button', { name: /envoyer le code/i }));
+
+    await screen.findByRole('group', { name: /code de vérification/i });
+    const cells = screen.getAllByRole('textbox') as HTMLInputElement[];
+    cells[0].focus();
+    await user.keyboard('123456');
+    await user.type(screen.getByLabelText(/nouveau mot de passe/i), 'nouveau1234');
+    await user.click(
+      screen.getByRole('button', { name: /réinitialiser le mot de passe/i }),
+    );
+
+    await waitFor(() => {
+      expect(window.localStorage.getItem('adressebj_token')).not.toBeNull();
+    });
+    expect(replace).toHaveBeenCalledWith('/dashboard');
+  });
+
+  it('n’expose aucune mention du back-office sur /auth (étanchéité)', async () => {
+    renderPage();
+    await screen.findByRole('tab', { name: /connexion/i });
+
+    expect(screen.queryByText(/back-office/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/modérateur/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/administrateur/i)).not.toBeInTheDocument();
+    expect(
+      document.querySelector('a[href="/admin/login"], a[href="/login"]'),
+    ).toBeNull();
+  });
 });
