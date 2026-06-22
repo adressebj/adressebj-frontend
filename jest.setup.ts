@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom';
 import { resetMockData } from '@/mocks/data';
+import { clearMockToasts } from '@/test/mocks/nextjs-toast-notify';
 
 // Each test starts from the seeded mock store — createAddress() and friends
 // mutate a shared module-level array, so without this reset writes from one
@@ -7,6 +8,9 @@ import { resetMockData } from '@/mocks/data';
 // proximity check).
 beforeEach(() => {
   resetMockData();
+  // Les toasts du stub sont injectés dans document.body, hors conteneur RTL :
+  // on les purge pour qu'ils ne fuient pas d'un test à l'autre.
+  clearMockToasts();
 });
 
 process.env.NEXT_PUBLIC_USE_MOCK = 'true';

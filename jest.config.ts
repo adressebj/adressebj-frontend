@@ -15,6 +15,9 @@ const config: Config = {
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
+    // La lib de toasts touche le DOM de façon non déterministe sous jsdom :
+    // on la remplace par un stub stable (cf. src/test/mocks).
+    '^nextjs-toast-notify$': '<rootDir>/src/test/mocks/nextjs-toast-notify.ts',
   },
   collectCoverageFrom: [
     'src/components/**/*.{ts,tsx}',
