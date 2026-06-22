@@ -1,6 +1,22 @@
-import type { JwtPayload } from '@/types/api';
+import type { JwtPayload, Role } from '@/types/api';
 
 const TOKEN_KEY = 'adressebj_token';
+
+// Le backend émet les rôles en français (HABITANT / MODERATEUR / ADMIN) ;
+// le frontend raisonne en CREATOR / MODERATOR / ADMIN. On normalise au
+// décodage pour que tout le reste de l'app (useAuth, gardes) reste inchangé.
+// Idempotent : un token mock (déjà CREATOR/MODERATOR) traverse sans dommage.
+const ROLE_MAP: Record<string, Role> = {
+  HABITANT: 'CREATOR',
+  MODERATEUR: 'MODERATOR',
+  ADMIN: 'ADMIN',
+  CREATOR: 'CREATOR',
+  MODERATOR: 'MODERATOR',
+};
+
+export function normalizeRole(role: string): Role {
+  return ROLE_MAP[role] ?? 'CREATOR';
+}
 
 // Accéder à `window.localStorage` peut lever une SecurityError dans les
 // navigateurs in-app (WhatsApp / Facebook / Instagram) et en navigation privée
@@ -41,7 +57,8 @@ export function decodeJwt(token: string): JwtPayload | null {
   try {
     const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
     const json = typeof atob === 'function' ? atob(payload) : Buffer.from(payload, 'base64').toString('utf8');
-    return JSON.parse(json) as JwtPayload;
+    const parsed = JSON.parse(json) as JwtPayload;
+    return { ...parsed, role: normalizeRole(parsed.role as unknown as string) };
   } catch {
     return null;
   }

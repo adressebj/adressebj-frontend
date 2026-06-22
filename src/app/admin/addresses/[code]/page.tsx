@@ -101,23 +101,6 @@ export default function AdminAddressDetailPage({ params }: RouteParams) {
     }
   }, [code, state, toast]);
 
-  const handleReactivate = useCallback(async () => {
-    if (state.kind !== 'ok') return;
-    setActing(true);
-    try {
-      await api.adminReactivateAddress(code);
-      setState({
-        kind: 'ok',
-        detail: { ...state.detail, isActive: true },
-      });
-      toast.show({ message: 'Adresse réactivée.', variant: 'success' });
-    } catch {
-      toast.show({ message: 'Action impossible.', variant: 'error' });
-    } finally {
-      setActing(false);
-    }
-  }, [code, state, toast]);
-
   if (state.kind === 'loading') {
     return (
       <section className="mx-auto w-full max-w-[1200px] px-4 sm:px-6 py-6 flex flex-col gap-6">
@@ -344,19 +327,11 @@ export default function AdminAddressDetailPage({ params }: RouteParams) {
                 Désactiver l&apos;adresse
               </Button>
             ) : (
-              <Button
-                type="button"
-                variant="primary"
-                size="lg"
-                fullWidth
-                loading={acting}
-                onClick={() => void handleReactivate()}
-                leadingIcon={
-                  <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-                }
-              >
-                Réactiver l&apos;adresse
-              </Button>
+              <p className="text-sm text-text-muted">
+                Cette adresse est désactivée. La désactivation est définitive : le
+                code n&apos;est jamais réattribué et l&apos;adresse ne peut pas
+                être réactivée.
+              </p>
             )}
             <Button
               type="button"
@@ -404,7 +379,8 @@ export default function AdminAddressDetailPage({ params }: RouteParams) {
         <p className="text-sm text-text-primary leading-relaxed">
           L&apos;adresse <strong>{address.code}</strong> ne sera plus
           consultable publiquement. Le propriétaire sera notifié par SMS et
-          notification push. L&apos;action est réversible.
+          notification push. L&apos;action est définitive : le code n&apos;est
+          jamais réattribué et l&apos;adresse ne pourra pas être réactivée.
         </p>
       </Modal>
     </section>
