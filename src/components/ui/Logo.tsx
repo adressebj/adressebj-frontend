@@ -1,3 +1,6 @@
+'use client';
+
+import { useId } from 'react';
 import { classNames } from '@/lib/utils';
 
 export type LogoSize = 'sm' | 'md' | 'lg' | 'xl';
@@ -127,6 +130,11 @@ interface LogoGlyphProps {
  * viewBox 30×34 — A : apex y6, pieds y23 (cap 17u) ; pointe du pin y33.
  */
 function LogoGlyph({ className }: LogoGlyphProps) {
+  // Id de dégradé UNIQUE par instance : deux logos sur une même page (ex. le
+  // panneau marque + l'en-tête mobile de /auth) ne doivent pas partager l'id,
+  // sinon un logo référence le paint-server d'un autre — cassé si ce dernier
+  // est dans un sous-arbre display:none. (Colons de useId retirés pour url().)
+  const gradientId = `abj-pin-${useId().replace(/:/g, '')}`;
   return (
     <svg
       viewBox="0 0 30 34"
@@ -134,7 +142,7 @@ function LogoGlyph({ className }: LogoGlyphProps) {
       className={classNames('shrink-0', className)}
     >
       <defs>
-        <linearGradient id="abj-pin" x1="0" y1="0" x2="0" y2="1">
+        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="var(--color-primary-light)" />
           <stop offset="55%" stopColor="var(--color-primary)" />
           <stop offset="100%" stopColor="var(--color-primary-dark)" />
@@ -143,7 +151,7 @@ function LogoGlyph({ className }: LogoGlyphProps) {
       {/* Goutte : tête circulaire (centre 15,15 · r 13), pointe en 15,33. */}
       <path
         d="M15 33 C 13 30.5, 4 23.5, 2 15 A 13 13 0 1 1 28 15 C 26 23.5, 17 30.5, 15 33 Z"
-        fill="url(#abj-pin)"
+        fill={`url(#${gradientId})`}
       />
       {/* Jambes du A (ivoire) — apex y6, pieds y23, à hauteur de capitale. */}
       <path
