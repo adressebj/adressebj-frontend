@@ -10,6 +10,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { Loader2, MapPin, Search, X } from 'lucide-react';
 import { geocode, type NominatimResult } from '@/lib/nominatim';
+import { encodePlace } from '@/lib/place';
 import { classNames } from '@/lib/utils';
 
 /**
@@ -103,6 +104,20 @@ export function SearchBar({ variant = 'landing', initialQuery = '' }: SearchBarP
     };
   }, [trimmed, isCodeFormat]);
 
+  // Ouvre /carte centrée sur le lieu, en transportant sa fiche (nom, type,
+  // localité, détails POI) via l'URL pour l'afficher là-bas.
+  const goToPlace = useCallback(
+    (place: NominatimResult) => {
+      const params = new URLSearchParams({
+        lat: String(place.lat),
+        lng: String(place.lng),
+        place: encodePlace(place),
+      });
+      router.push(`/carte?${params.toString()}`);
+    },
+    [router],
+  );
+
   // Soumission via Enter : si format code → nav directe ; sinon prend la
   // première suggestion Nominatim si disponible.
   const handleSubmit = useCallback(
@@ -113,18 +128,14 @@ export function SearchBar({ variant = 'landing', initialQuery = '' }: SearchBarP
         return;
       }
       const first = results[0];
-      if (first) {
-        router.push(`/carte?lat=${first.lat}&lng=${first.lng}`);
-      }
+      if (first) goToPlace(first);
     },
-    [isCodeFormat, trimmed, results, router],
+    [isCodeFormat, trimmed, results, router, goToPlace],
   );
 
   const handlePickResult = useCallback(
-    (hit: NominatimResult) => {
-      router.push(`/carte?lat=${hit.lat}&lng=${hit.lng}`);
-    },
-    [router],
+    (hit: NominatimResult) => goToPlace(hit),
+    [goToPlace],
   );
 
   const handleClear = useCallback(() => {
