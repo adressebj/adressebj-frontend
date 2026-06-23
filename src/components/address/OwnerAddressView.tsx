@@ -8,7 +8,6 @@ import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
   ArrowLeft,
-  Clock,
   Copy,
   Edit3,
   Eye,
@@ -23,6 +22,7 @@ import {
 } from 'lucide-react';
 import { CategoryMedallion } from '@/components/address/CategoryMedallion';
 import { FieldNotesList } from '@/components/address/FieldNotesList';
+import { ModerationTimeline } from '@/components/address/ModerationTimeline';
 import { RatingSummary } from '@/components/address/RatingSummary';
 import { RevisionHistory } from '@/components/address/RevisionHistory';
 import { StepsList } from '@/components/address/StepsList';
@@ -300,14 +300,10 @@ export function OwnerAddressView({ code: rawCode }: OwnerAddressViewProps) {
                 </p>
               </div>
 
-              {/* Statut de visibilité + date de création (méta propriétaire). */}
+              {/* Statut de visibilité + date de création (méta propriétaire).
+                  En attente/refusée, la timeline ci-dessous porte le statut. */}
               <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-xs">
-                {notPublic ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-warning-light text-warning px-2.5 py-1 font-semibold border border-warning/30">
-                    <Clock className="h-3.5 w-3.5" aria-hidden="true" />
-                    {isRejected ? 'Modifications refusées' : 'En attente de validation'}
-                  </span>
-                ) : discoverable === false ? (
+                {notPublic ? null : discoverable === false ? (
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-muted text-text-muted px-2.5 py-1 font-semibold border border-border">
                     <EyeOff className="h-3.5 w-3.5" aria-hidden="true" />
                     Masquée de la carte
@@ -318,28 +314,17 @@ export function OwnerAddressView({ code: rawCode }: OwnerAddressViewProps) {
                     Visible sur la carte
                   </span>
                 )}
-                <span className="text-text-muted">· Créée le {createdAtFmt}</span>
+                <span className="text-text-muted">
+                  {!notPublic && '· '}Créée le {createdAtFmt}
+                </span>
               </div>
 
-              {/* Bandeau « en cours d'analyse » — adresse pas encore publique. */}
+              {/* Suivi de modération (en attente/refusée) sinon note + visites. */}
               {notPublic ? (
-                <div className="flex items-start gap-3 rounded-[var(--radius-lg)] border border-warning/30 bg-warning-light/60 p-4">
-                  <Clock className="h-5 w-5 shrink-0 text-warning mt-0.5" aria-hidden="true" />
-                  <div className="flex flex-col gap-1">
-                    <p className="text-sm font-semibold text-text-primary">
-                      {isRejected
-                        ? 'Modifications à revoir'
-                        : 'En cours d’analyse de conformité'}
-                    </p>
-                    <p className="text-sm text-text-muted leading-relaxed">
-                      {isRejected
-                        ? 'Vos dernières modifications n’ont pas été retenues. Ajustez votre adresse, puis soumettez-la à nouveau.'
-                        : 'Votre adresse est en cours de vérification par nos modérateurs. Vous pouvez déjà la consulter ; elle deviendra partageable et visible publiquement une fois validée.'}
-                    </p>
-                  </div>
-                </div>
+                <ModerationTimeline
+                  status={isRejected ? 'REJETEE' : 'EN_ATTENTE_VALIDATION'}
+                />
               ) : (
-                /* Bloc note + visites — la performance de l'adresse (publiée). */
                 <RatingSummary
                   averageRating={address.averageRating}
                   ratingCount={address.ratingCount}
