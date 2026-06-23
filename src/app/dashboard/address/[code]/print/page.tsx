@@ -8,7 +8,10 @@ interface RouteParams {
   params: Promise<{ code: string }>;
 }
 
-const ROOT = 'adressebj.com';
+// Domaine public réel (le QR imprimé doit ouvrir la vraie page). Surchargé par
+// NEXT_PUBLIC_SITE_URL si un domaine propre est configuré.
+const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://adressebj.vercel.app';
+const HOST = SITE.replace(/^https?:\/\//, '');
 
 export default function PrintAddressPage({ params }: RouteParams) {
   const { code: rawCode } = use(params);
@@ -16,7 +19,7 @@ export default function PrintAddressPage({ params }: RouteParams) {
   const searchParams = useSearchParams();
   const autoPrint = searchParams?.get('autoprint') === 'true';
 
-  const shareUrl = `https://${ROOT}/a/${code}`;
+  const shareUrl = `${SITE}/a/${code}`;
 
   useEffect(() => {
     if (!autoPrint) return;
@@ -45,7 +48,7 @@ export default function PrintAddressPage({ params }: RouteParams) {
             {code}
           </p>
           <p className="text-sm text-text-muted">
-            {ROOT}/a/{code}
+            {HOST}/a/{code}
           </p>
         </div>
 
