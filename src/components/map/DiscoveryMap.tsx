@@ -18,6 +18,9 @@ export interface DiscoveryMapBounds {
 export interface DiscoveryMapApi {
   flyTo: (lat: number, lng: number, zoom?: number) => void;
   flyToUser: () => Promise<boolean>;
+  /** Place (ou retire avec `null`) un marqueur distinct « lieu recherché »
+   *  (résultat Nominatim), différent des gouttes d'adresses AdresseBJ. */
+  setSearchPoint: (point: { lat: number; lng: number } | null) => void;
 }
 
 export interface DiscoveryMapProps {
@@ -95,6 +98,11 @@ const CATEGORY_SVG: Record<string, string> = {
   AUTRE: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/></svg>',
 };
 
+// Marqueur "lieu recherché" (Nominatim) — goutte or + loupe, distinct des
+// gouttes vertes d'adresses AdresseBJ.
+const SEARCH_SVG =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>';
+
 interface MarkerEntry {
   marker: import('leaflet').Marker;
   muted: boolean;
@@ -138,6 +146,8 @@ export function DiscoveryMap({
 
   // Index code → marqueur, pour differ sans tout reconstruire.
   const markersRef = useRef<Map<string, MarkerEntry>>(new Map());
+  // Marqueur unique du lieu recherché (Nominatim), piloté impérativement.
+  const searchMarkerRef = useRef<import('leaflet').Marker | null>(null);
 
   // Dernières callbacks dans des refs : évite de recréer la map quand le parent
   // passe une nouvelle référence de fonction à chaque render.
@@ -230,6 +240,8 @@ export function DiscoveryMap({
         destroy: () => {
           map.off('moveend', emitBounds);
           map.off('zoomend', emitBounds);
+          searchMarkerRef.current?.remove();
+          searchMarkerRef.current = null;
           map.remove();
         },
       };
@@ -288,6 +300,25 @@ export function DiscoveryMap({
               { enableHighAccuracy: true, timeout: 5_000 },
             );
           }),
+        setSearchPoint: (point) => {
+          if (searchMarkerRef.current) {
+            searchMarkerRef.current.remove();
+            searchMarkerRef.current = null;
+          }
+          if (!point) return;
+          const icon = L.divIcon({
+            html: coloredMarkerHtml(SEARCH_SVG, true, 'var(--color-accent)'),
+            className: '',
+            iconSize: [34, 34],
+            iconAnchor: [17, 34],
+          });
+          searchMarkerRef.current = L.marker([point.lat, point.lng], {
+            icon,
+            interactive: false,
+            keyboard: false,
+            zIndexOffset: 500,
+          }).addTo(map);
+        },
       });
     })();
 

@@ -1,15 +1,17 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { ArrowLeft, Locate } from 'lucide-react';
 import { type Category } from '@/lib/categories';
 import { api } from '@/lib/api';
+import { decodePlace } from '@/lib/place';
 import { useToast } from '@/components/ui/Toast';
 import { SearchBar } from '@/components/forms/SearchBar';
 import { CategoryFilters } from '@/components/discovery/CategoryFilters';
+import { PlaceCard } from '@/components/discovery/PlaceCard';
 import { ResultsPanel } from '@/components/discovery/ResultsPanel';
 import { BottomSheet } from '@/components/discovery/BottomSheet';
 import type { DiscoveryMapApi } from '@/components/map/DiscoveryMap';
@@ -78,6 +80,29 @@ function CartePageInner() {
 
   // API impérative de la carte (FAB géoloc, vol vers un résultat).
   const mapApiRef = useRef<DiscoveryMapApi | null>(null);
+  const [mapReady, setMapReady] = useState(false);
+
+  // Lieu OSM recherché par nom (décodé de l'URL) → fiche sommaire + marqueur.
+  const placeParam = searchParams?.get('place');
+  const selectedPlace = useMemo(() => decodePlace(placeParam), [placeParam]);
+
+  // Marqueur « lieu recherché » + vol vers lui, dès que la carte est prête.
+  useEffect(() => {
+    if (!mapReady) return;
+    const map = mapApiRef.current;
+    if (!map) return;
+    if (selectedPlace) {
+      map.setSearchPoint({ lat: selectedPlace.lat, lng: selectedPlace.lng });
+      map.flyTo(selectedPlace.lat, selectedPlace.lng, 16);
+    } else {
+      map.setSearchPoint(null);
+    }
+  }, [mapReady, selectedPlace]);
+
+  const handleClosePlace = useCallback(() => {
+    mapApiRef.current?.setSearchPoint(null);
+    router.replace('/carte');
+  }, [router]);
 
   // Dernière bbox vue + timer de debounce.
   const lastBoundsRef = useRef<{
@@ -180,6 +205,10 @@ function CartePageInner() {
         ? 'Aucune adresse visible ici'
         : `${listItems.length} adresse${listItems.length > 1 ? 's' : ''} visible${listItems.length > 1 ? 's' : ''} ici`;
 
+  const placeCardEl = selectedPlace ? (
+    <PlaceCard place={selectedPlace} onClose={handleClosePlace} />
+  ) : null;
+
   const resultsPanel = (
     <ResultsPanel
       items={listItems}
@@ -209,6 +238,7 @@ function CartePageInner() {
           onItemActivate={setActiveCode}
           onReady={(mapApi) => {
             mapApiRef.current = mapApi;
+            setMapReady(true);
           }}
         />
 
@@ -269,7 +299,10 @@ function CartePageInner() {
           />
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto bg-bg">{resultsPanel}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto bg-bg">
+          {placeCardEl ? <div className="p-4 pb-0">{placeCardEl}</div> : null}
+          {resultsPanel}
+        </div>
       </aside>
 
 
@@ -279,6 +312,7 @@ function CartePageInner() {
         onExpandedChange={setSheetExpanded}
         peek={
           <div className="px-4 pb-3 pt-1 space-y-2.5">
+            {placeCardEl}
             <p
               className="font-display font-semibold text-text-primary"
               aria-live="polite"
