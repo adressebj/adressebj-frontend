@@ -306,22 +306,24 @@ describe('AddressForm', () => {
     );
   }, 20000);
 
-  it('refuse de valider une position trop imprécise et bascule en saisie manuelle', async () => {
+  it('garde une position approximative (géoloc réseau) validable, sans imposer la saisie manuelle', async () => {
     const user = userEvent.setup();
-    // Précision de type géoloc IP (centaines de km) → au-dessus du plafond dur.
+    // Précision de type géoloc réseau (centaines de km) → au-dessus du plafond dur.
     mockGeolocation('success', AKP_COORDS, 230_913);
     renderForm();
 
-    await screen.findByText(/position non fiable/i);
-    // Pas de validation « devant ma porte » : l'option est retirée.
+    // Position approximative annoncée, mais conservée et validable.
+    await screen.findByRole('button', { name: /valider cette position/i });
+    expect(screen.getAllByText(/position approximative/i).length).toBeGreaterThan(0);
+    // Pas le libellé « devant ma porte » (réservé à une position précise).
     expect(
       screen.queryByRole('button', { name: /je suis devant ma porte/i }),
     ).not.toBeInTheDocument();
 
+    // La saisie manuelle reste proposée en option.
     await user.click(
-      screen.getByRole('button', { name: /saisir mes coordonnées/i }),
+      screen.getByRole('button', { name: /saisir les coordonnées/i }),
     );
-
     expect(screen.getByLabelText(/^latitude$/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/^longitude$/i)).toBeInTheDocument();
   }, 20000);

@@ -31,7 +31,6 @@ function buildSvg({ size, glyphH, maskable }) {
   const gw = 30 * scale;
   const tx = (size - gw) / 2;
   const ty = (size - glyphH) / 2;
-  const sw = 3.4 * scale; // épaisseur de trait du « A », à l'échelle
   const radius = maskable ? 0 : Math.round(size * 0.22);
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">

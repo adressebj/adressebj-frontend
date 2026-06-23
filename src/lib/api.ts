@@ -280,8 +280,56 @@ async function realFetch<T>(path: string, options: FetchOptions): Promise<T> {
   const body = options.body as Record<string, unknown> | undefined;
   const T = <X>(v: X) => v as unknown as T;
 
-  // ── Repères Overpass (route interne) : best-effort, vide si non disponible ──
-  if (path.startsWith('/internal/nearby-landmark')) return T([]);
+  // ── Repères avoisinants : POI OpenStreetMap via Overpass (CDC §Overpass —
+  //    la recherche de repères est déléguée au frontend). Best-effort : tout
+  //    échec/timeout → liste vide (rédaction libre), jamais une exception. ──
+  if (path.startsWith('/internal/nearby-landmark') && method === 'GET') {
+    const u = new URL(path, 'http://x.local');
+    const lat = Number(u.searchParams.get('lat'));
+    const lng = Number(u.searchParams.get('lng'));
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return T([]);
+    const RADIUS_M = 300;
+    // Nœuds nommés porteurs d'un tag « repère » utile (commerces, services,
+    // lieux de culte, écoles, arrêts…) dans le rayon.
+    const ql = `[out:json][timeout:10];(` +
+      ['amenity', 'shop', 'leisure', 'tourism', 'office', 'healthcare']
+        .map((k) => `node(around:${RADIUS_M},${lat},${lng})[${k}][name];`)
+        .join('') +
+      `node(around:${RADIUS_M},${lat},${lng})[highway=bus_stop][name];` +
+      `);out body 50;`;
+    try {
+      const res = await fetch('https://overpass-api.de/api/interpreter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `data=${encodeURIComponent(ql)}`,
+        signal: options.signal ?? undefined,
+      });
+      if (!res.ok) return T([]);
+      const json = (await res.json()) as {
+        elements?: Array<{
+          lat?: number; lon?: number;
+          tags?: Record<string, string>;
+        }>;
+      };
+      const found = (json.elements ?? [])
+        .filter((e) => e.tags?.name && Number.isFinite(e.lat) && Number.isFinite(e.lon))
+        .map((e) => ({
+          name: e.tags!.name,
+          category:
+            e.tags!.amenity ?? e.tags!.shop ?? e.tags!.leisure ??
+            e.tags!.tourism ?? e.tags!.office ?? e.tags!.healthcare ?? undefined,
+          lat: e.lat!,
+          lng: e.lon!,
+          distanceM: Math.round(haversineMeters(lat, lng, e.lat!, e.lon!)),
+        }))
+        .filter((l) => l.distanceM <= RADIUS_M)
+        .sort((a, b) => a.distanceM - b.distanceM)
+        .slice(0, 20);
+      return T(found);
+    } catch {
+      return T([]);
+    }
+  }
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   if (path === '/auth/register' && method === 'POST') {
@@ -454,14 +502,19 @@ async function realFetch<T>(path: string, options: FetchOptions): Promise<T> {
   if ((path === '/addresses' || path === '/addresses/mine') && method === 'GET') {
     const rows = await backendFetch<Array<{
       code: string; lifecycle: string; mapDiscoverable: boolean; published: boolean;
-      category: AddressCategory | null; currentRevisionStatus: string | null; createdAt: string;
+      category: AddressCategory | null; currentRevisionStatus: string | null;
+      photoUrl: string | null; quartierName: string | null;
+      gps: { lat: number; lng: number } | null; createdAt: string;
     }>>('/addresses/mine', { auth: 'jwt' });
     return T(rows.map((a) => ({
       code: a.code,
       quartierId: '',
+      quartier: a.quartierName
+        ? { id: '', name: a.quartierName, prefix: '', isActive: true }
+        : undefined,
       category: (a.category ?? 'AUTRE') as AddressCategory,
-      gps: { lat: 0, lng: 0 },
-      photoUrl: '',
+      gps: a.gps ?? { lat: 0, lng: 0 },
+      photoUrl: a.photoUrl ?? '',
       instructions: { steps: [], assembledText: '' },
       reliabilityScore: null,
       averageRating: null,
@@ -1601,7 +1654,7 @@ export const api = {
     try {
       const list = await apiFetch<NearbyLandmark[]>(
         `/internal/nearby-landmark?lat=${lat}&lng=${lng}`,
-        { auth: 'jwt', internal: true, signal: AbortSignal.timeout(5000) },
+        { auth: 'jwt', internal: true, signal: AbortSignal.timeout(8000) },
       );
       if (!Array.isArray(list) || list.length === 0) return null;
       return list.reduce((closest, l) =>
