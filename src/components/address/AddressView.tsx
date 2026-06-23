@@ -12,6 +12,7 @@ import {
   Home,
   LogIn,
   MapPin,
+  MessageCircle,
   Navigation as NavigationIcon,
   QrCode,
   RotateCw,
@@ -77,6 +78,15 @@ export function AddressView({ code }: AddressViewProps) {
   const [stars, setStars] = useState(0);
 
   const [qrOpen, setQrOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [canNativeShare, setCanNativeShare] = useState(false);
+  useEffect(() => {
+    // Détecté après montage (absent au SSR) → pas de divergence d'hydratation.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCanNativeShare(
+      typeof navigator !== 'undefined' && typeof navigator.share === 'function',
+    );
+  }, []);
 
   const [reportOpen, setReportOpen] = useState(false);
   const [reportMessage, setReportMessage] = useState('');
@@ -167,16 +177,28 @@ export function AddressView({ code }: AddressViewProps) {
       .catch(() => {});
   }, [code]);
 
-  const handleShare = useCallback(async () => {
-    const url = typeof window !== 'undefined' ? window.location.href : '';
-    if (typeof navigator.share === 'function') {
-      try {
-        await navigator.share({ title: `Adresse ${code}`, url });
-        return;
-      } catch {
-        // User cancelled or share unavailable — fall through to clipboard.
-      }
-    }
+  // Feuille de partage : WhatsApp (au minimum) + options natives + copie.
+  const openWhatsApp = useCallback(() => {
+    const url = typeof window !== 'undefined' ? window.location.href : `/a/${code}`;
+    const msg = `Adresse AdresseBJ ${code} : ${url}`;
+    window.open(
+      `https://wa.me/?text=${encodeURIComponent(msg)}`,
+      '_blank',
+      'noopener,noreferrer',
+    );
+    setShareOpen(false);
+  }, [code]);
+
+  const shareNative = useCallback(() => {
+    const url = typeof window !== 'undefined' ? window.location.href : `/a/${code}`;
+    navigator
+      .share({ title: `Adresse ${code}`, text: `Adresse AdresseBJ ${code} : ${url}`, url })
+      .catch(() => {});
+    setShareOpen(false);
+  }, [code]);
+
+  const copyLink = useCallback(async () => {
+    const url = typeof window !== 'undefined' ? window.location.href : `/a/${code}`;
     try {
       await navigator.clipboard?.writeText?.(url);
       toast.show({ message: 'Lien copié !', variant: 'success' });
@@ -186,6 +208,7 @@ export function AddressView({ code }: AddressViewProps) {
         variant: 'error',
       });
     }
+    setShareOpen(false);
   }, [code, toast]);
 
   const handleCopyCode = useCallback(async () => {
@@ -366,7 +389,7 @@ export function AddressView({ code }: AddressViewProps) {
 
   const quickActions = [
     { icon: QrCode, label: 'QR Code', onClick: () => setQrOpen(true) },
-    { icon: Share2, label: 'Partager', onClick: () => void handleShare() },
+    { icon: Share2, label: 'Partager', onClick: () => setShareOpen(true) },
     { icon: Copy, label: 'Copier le code', onClick: () => void handleCopyCode() },
   ];
 
@@ -606,6 +629,49 @@ export function AddressView({ code }: AddressViewProps) {
           code={address.code}
           url={typeof window !== 'undefined' ? window.location.href : `/a/${address.code}`}
         />
+      </Modal>
+
+      <Modal
+        isOpen={shareOpen}
+        onClose={() => setShareOpen(false)}
+        title={`Partager ${address.code}`}
+      >
+        <div className="flex flex-col gap-3">
+          <Button
+            type="button"
+            variant="primary"
+            size="lg"
+            fullWidth
+            className="rounded-xl !bg-[#25D366] hover:!bg-[#1FAE55] !border-transparent !text-white"
+            onClick={openWhatsApp}
+            leadingIcon={<MessageCircle className="h-5 w-5" aria-hidden="true" />}
+          >
+            Partager sur WhatsApp
+          </Button>
+          {canNativeShare ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="lg"
+              fullWidth
+              className="rounded-xl"
+              onClick={shareNative}
+              leadingIcon={<Share2 className="h-5 w-5" aria-hidden="true" />}
+            >
+              Plus d’options de partage
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            variant="ghost"
+            size="md"
+            fullWidth
+            onClick={() => void copyLink()}
+            leadingIcon={<Copy className="h-4 w-4" aria-hidden="true" />}
+          >
+            Copier le lien
+          </Button>
+        </div>
       </Modal>
 
       <Modal
