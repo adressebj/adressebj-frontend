@@ -1,8 +1,8 @@
 'use client';
 
-import { use, useRef } from 'react';
+import { use, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Download, Printer, Share2, X } from 'lucide-react';
+import { Download, MessageCircle, Printer, Share2, X } from 'lucide-react';
 import { QRCodeDisplay } from '@/components/address/QRCodeDisplay';
 import { ShareButton } from '@/components/address/ShareButton';
 import { Button } from '@/components/ui/Button';
@@ -11,7 +11,9 @@ interface RouteParams {
   params: Promise<{ code: string }>;
 }
 
-const ROOT = 'https://adressebj.com';
+// Domaine public réel du site (le lien partagé / QR doit ouvrir la vraie page).
+// Surchargé par NEXT_PUBLIC_SITE_URL si un domaine propre est configuré.
+const ROOT = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://adressebj.vercel.app';
 
 export default function ShareAddressPage({ params }: RouteParams) {
   const { code: rawCode } = use(params);
@@ -39,16 +41,28 @@ export default function ShareAddressPage({ params }: RouteParams) {
     );
   };
 
+  // WhatsApp explicite et fiable : on ouvre toujours wa.me (mobile → l'appli,
+  // desktop → WhatsApp Web). Pas de Web Share API ici, pour garantir WhatsApp.
   const openWhatsApp = () => {
-    if (typeof navigator.share === 'function') {
-      navigator
-        .share({ title: 'AdresseBJ', text: whatsappText, url: shareUrl })
-        .catch(() => {
-          window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-        });
-      return;
-    }
     window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  // « Plus d'options » : feuille de partage native (Telegram, SMS, e-mail, …).
+  // Affichée seulement si l'API existe (détectée après montage → pas de
+  // divergence d'hydratation).
+  const [canNativeShare, setCanNativeShare] = useState(false);
+  useEffect(() => {
+    // Détection post-montage (l'API n'existe pas au SSR) → démarre `false` des
+    // deux côtés, pas de divergence d'hydratation.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCanNativeShare(
+      typeof navigator !== 'undefined' && typeof navigator.share === 'function',
+    );
+  }, []);
+  const shareNative = () => {
+    navigator
+      .share({ title: 'AdresseBJ', text: whatsappText, url: shareUrl })
+      .catch(() => {});
   };
 
   return (
@@ -84,30 +98,32 @@ export default function ShareAddressPage({ params }: RouteParams) {
           <p className="text-base text-text-muted break-all">{shareUrl}</p>
         </div>
 
-        {/* Actions */}
-        <div className="w-full max-w-sm flex flex-col gap-4">
+        {/* Actions — WhatsApp en premier (au minimum), puis les autres canaux. */}
+        <div className="w-full max-w-sm flex flex-col gap-3">
           <Button
             type="button"
             variant="primary"
             size="lg"
             fullWidth
-            className="rounded-xl"
-            onClick={downloadImage}
-            leadingIcon={<Download className="h-5 w-5" aria-hidden="true" />}
-          >
-            Télécharger l’image
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            size="lg"
-            fullWidth
-            className="rounded-xl"
+            className="rounded-xl !bg-[#25D366] hover:!bg-[#1FAE55] !border-transparent !text-white"
             onClick={openWhatsApp}
-            leadingIcon={<Share2 className="h-5 w-5" aria-hidden="true" />}
+            leadingIcon={<MessageCircle className="h-5 w-5" aria-hidden="true" />}
           >
-            Partager
+            Partager sur WhatsApp
           </Button>
+          {canNativeShare ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="lg"
+              fullWidth
+              className="rounded-xl"
+              onClick={shareNative}
+              leadingIcon={<Share2 className="h-5 w-5" aria-hidden="true" />}
+            >
+              Plus d’options de partage
+            </Button>
+          ) : null}
           <ShareButton
             url={shareUrl}
             variant="ghost"
@@ -117,6 +133,16 @@ export default function ShareAddressPage({ params }: RouteParams) {
           >
             Copier le lien
           </ShareButton>
+          <Button
+            type="button"
+            variant="ghost"
+            size="md"
+            fullWidth
+            onClick={downloadImage}
+            leadingIcon={<Download className="h-4 w-4" aria-hidden="true" />}
+          >
+            Télécharger l’image
+          </Button>
           <Button
             type="button"
             variant="ghost"
