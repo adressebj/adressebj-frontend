@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
   ArrowLeft,
+  Clock,
   Copy,
   Edit3,
   Eye,
@@ -207,12 +208,19 @@ export function OwnerAddressView({ code: rawCode }: OwnerAddressViewProps) {
   });
   const canConfirm = confirmCode.trim().toUpperCase() === code && !deactivating;
 
+  // Adresse pas encore publique : en attente de validation ou révision refusée.
+  // On la rend consultable au propriétaire, mais les actions qui exigent une
+  // adresse validée (partage, QR, aperçu visiteur, carte publique) sont bloquées.
+  const isPending = address.status === 'EN_ATTENTE_VALIDATION';
+  const isRejected = address.status === 'REJETEE';
+  const notPublic = isPending || isRejected;
+
   const quickActions = [
-    {
-      icon: Eye,
-      label: 'Aperçu visiteur',
-      href: `/a/${code}`,
-    },
+    // L'aperçu visiteur (/a/:code) renverrait 404 tant que l'adresse n'est pas
+    // publiée : on le retire pour une adresse en cours de validation.
+    ...(notPublic
+      ? []
+      : [{ icon: Eye, label: 'Aperçu visiteur', href: `/a/${code}` }]),
     {
       icon: Copy,
       label: 'Copier le code',
@@ -294,7 +302,12 @@ export function OwnerAddressView({ code: rawCode }: OwnerAddressViewProps) {
 
               {/* Statut de visibilité + date de création (méta propriétaire). */}
               <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-xs">
-                {discoverable === false ? (
+                {notPublic ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-warning-light text-warning px-2.5 py-1 font-semibold border border-warning/30">
+                    <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+                    {isRejected ? 'Modifications refusées' : 'En attente de validation'}
+                  </span>
+                ) : discoverable === false ? (
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-muted text-text-muted px-2.5 py-1 font-semibold border border-border">
                     <EyeOff className="h-3.5 w-3.5" aria-hidden="true" />
                     Masquée de la carte
@@ -308,28 +321,60 @@ export function OwnerAddressView({ code: rawCode }: OwnerAddressViewProps) {
                 <span className="text-text-muted">· Créée le {createdAtFmt}</span>
               </div>
 
-              {/* Bloc note + visites — la performance de l'adresse. */}
-              <RatingSummary
-                averageRating={address.averageRating}
-                ratingCount={address.ratingCount}
-                visitCount={address.visitCount}
-                className="animate-fade-up stagger-1"
-              />
+              {/* Bandeau « en cours d'analyse » — adresse pas encore publique. */}
+              {notPublic ? (
+                <div className="flex items-start gap-3 rounded-[var(--radius-lg)] border border-warning/30 bg-warning-light/60 p-4">
+                  <Clock className="h-5 w-5 shrink-0 text-warning mt-0.5" aria-hidden="true" />
+                  <div className="flex flex-col gap-1">
+                    <p className="text-sm font-semibold text-text-primary">
+                      {isRejected
+                        ? 'Modifications à revoir'
+                        : 'En cours d’analyse de conformité'}
+                    </p>
+                    <p className="text-sm text-text-muted leading-relaxed">
+                      {isRejected
+                        ? 'Vos dernières modifications n’ont pas été retenues. Ajustez votre adresse, puis soumettez-la à nouveau.'
+                        : 'Votre adresse est en cours de vérification par nos modérateurs. Vous pouvez déjà la consulter ; elle deviendra partageable et visible publiquement une fois validée.'}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                /* Bloc note + visites — la performance de l'adresse (publiée). */
+                <RatingSummary
+                  averageRating={address.averageRating}
+                  ratingCount={address.ratingCount}
+                  visitCount={address.visitCount}
+                  className="animate-fade-up stagger-1"
+                />
+              )}
             </header>
 
             {/* ── ACTIONS CLÉS (Partager / Modifier) ── */}
             <div className="animate-fade-up stagger-1 flex flex-col gap-3">
-              <Link href={`/dashboard/address/${code}/share`} className="block">
+              {notPublic ? (
                 <Button
                   variant="primary"
                   size="lg"
                   fullWidth
+                  disabled
                   leadingIcon={<Share2 className="h-5 w-5" aria-hidden="true" />}
                   className="rounded-[var(--radius-lg)] font-bold shadow-sm"
                 >
-                  Partager / QR Code
+                  Bientôt partageable
                 </Button>
-              </Link>
+              ) : (
+                <Link href={`/dashboard/address/${code}/share`} className="block">
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    fullWidth
+                    leadingIcon={<Share2 className="h-5 w-5" aria-hidden="true" />}
+                    className="rounded-[var(--radius-lg)] font-bold shadow-sm"
+                  >
+                    Partager / QR Code
+                  </Button>
+                </Link>
+              )}
               <Link href={`/dashboard/address/${code}/edit`} className="block">
                 <Button
                   variant="secondary"
@@ -420,22 +465,24 @@ export function OwnerAddressView({ code: rawCode }: OwnerAddressViewProps) {
               aria-label="Réglages de l'adresse"
               className="animate-fade-up rounded-[var(--radius-lg)] border border-border bg-surface-muted/60 p-2"
             >
-              <button
-                type="button"
-                onClick={() =>
-                  window.open(
-                    `/dashboard/address/${code}/print`,
-                    '_blank',
-                    'noopener,noreferrer',
-                  )
-                }
-                className="w-full flex items-center gap-3 rounded-[var(--radius-md)] px-3 py-3 text-left text-sm font-medium text-text-primary hover:bg-surface transition-colors cursor-pointer"
-              >
-                <Printer className="h-5 w-5 shrink-0 text-text-muted" aria-hidden="true" />
-                Imprimer le QR Code
-              </button>
+              {!notPublic ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    window.open(
+                      `/dashboard/address/${code}/print`,
+                      '_blank',
+                      'noopener,noreferrer',
+                    )
+                  }
+                  className="w-full flex items-center gap-3 rounded-[var(--radius-md)] px-3 py-3 text-left text-sm font-medium text-text-primary hover:bg-surface transition-colors cursor-pointer"
+                >
+                  <Printer className="h-5 w-5 shrink-0 text-text-muted" aria-hidden="true" />
+                  Imprimer le QR Code
+                </button>
+              ) : null}
 
-              {discoverable != null ? (
+              {!notPublic && discoverable != null ? (
                 <button
                   type="button"
                   onClick={() => void handleToggleDiscovery()}

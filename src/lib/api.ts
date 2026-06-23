@@ -275,6 +275,51 @@ function toQueueItem(r: BackendPendingRevision) {
   };
 }
 
+// Reconstruit la vue propriétaire d'une adresse NON publiée (en attente /
+// refusée) à partir des endpoints accessibles au propriétaire : /addresses/mine
+// (méta, GPS, quartier, photo) + /addresses/:code/revisions (contenu de la
+// dernière révision). Renvoie un PublicAddress complet, marqué de son `status`.
+async function assembleOwnerView(code: string): Promise<PublicAddress> {
+  const upper = code.toUpperCase();
+  const [mineRows, revs] = await Promise.all([
+    backendFetch<Array<{
+      code: string; lifecycle: string; mapDiscoverable: boolean; published: boolean;
+      category: AddressCategory | null; currentRevisionStatus: string | null;
+      photoUrl: string | null; quartierName: string | null;
+      gps: { lat: number; lng: number } | null; createdAt: string;
+    }>>('/addresses/mine', { auth: 'jwt' }),
+    backendFetch<Array<{
+      category: AddressCategory; steps: string[]; assembledText: string;
+      photoUrl: string;
+    }>>(`/addresses/${code}/revisions`, { auth: 'jwt' }).catch(() => []),
+  ]);
+  const mine = mineRows.find((r) => r.code.toUpperCase() === upper);
+  if (!mine) {
+    throw new ApiError(404, 'ADDRESS_NOT_FOUND', 'Adresse introuvable.');
+  }
+  const latest = revs[0] ?? null; // révision la plus récente (1 seule si jamais publiée)
+  return {
+    code: mine.code,
+    quartier: { name: mine.quartierName ?? '', prefix: '' },
+    category: (latest?.category ?? mine.category ?? 'AUTRE') as AddressCategory,
+    gps: mine.gps ?? { lat: 0, lng: 0 },
+    photoUrl: latest?.photoUrl ?? mine.photoUrl ?? '',
+    instructions: {
+      steps: latest?.steps ?? [],
+      assembledText: latest?.assembledText ?? '',
+    },
+    reliabilityScore: null,
+    averageRating: null,
+    ratingCount: 0,
+    visitCount: 0,
+    isActive: mine.lifecycle !== 'DESACTIVEE',
+    mapDiscoverable: mine.mapDiscoverable,
+    myRating: null,
+    status: deriveStatus(mine.lifecycle, mine.currentRevisionStatus, mine.published),
+    createdAt: mine.createdAt,
+  };
+}
+
 async function realFetch<T>(path: string, options: FetchOptions): Promise<T> {
   const method = (options.method ?? 'GET').toUpperCase();
   const body = options.body as Record<string, unknown> | undefined;
@@ -489,15 +534,32 @@ async function realFetch<T>(path: string, options: FetchOptions): Promise<T> {
     });
   }
 
-  // ── Adresses : lecture publique / propriétaire ──────────────────────────────
-  const codeResolve = path.match(/^\/addresses\/([^/]+)\/resolve$/);
+  // ── Adresse : vue visiteur (publique) ──────────────────────────────────────
+  // Une adresse jamais publiée renvoie 404 (existence masquée) : on laisse
+  // l'erreur remonter telle quelle côté public.
   const codePublic = path.match(/^\/addresses\/([^/]+)$/);
-  if (method === 'GET' && (codeResolve || codePublic)) {
-    // Vue propriétaire ET vue visiteur passent par l'endpoint public (le helper
-    // ownerAddress visait /resolve, réservé aux clés API — corrigé ici).
-    const code = (codeResolve ?? codePublic)![1];
-    const d = await backendFetch<Parameters<typeof toPublicShape>[0]>(`/addresses/${code}`);
+  if (method === 'GET' && codePublic) {
+    const d = await backendFetch<Parameters<typeof toPublicShape>[0]>(`/addresses/${codePublic[1]}`);
     return T(toPublicShape(d));
+  }
+  // ── Adresse : vue propriétaire (helper ownerAddress → /resolve) ─────────────
+  // Le propriétaire doit voir SON adresse même non publiée (en attente /
+  // refusée), alors que l'endpoint public en masque l'existence (404). On tente
+  // la lecture publique ; sur 404/410 on reconstruit la vue depuis /mine (méta
+  // + GPS + quartier) et /revisions (contenu), en y joignant le `status`.
+  const codeResolve = path.match(/^\/addresses\/([^/]+)\/resolve$/);
+  if (method === 'GET' && codeResolve) {
+    const code = codeResolve[1];
+    try {
+      const d = await backendFetch<Parameters<typeof toPublicShape>[0]>(`/addresses/${code}`);
+      return T({ ...toPublicShape(d), status: 'PUBLIEE' as AddressStatus });
+    } catch (err) {
+      // 404 = jamais publiée (en attente / refusée) → on reconstruit la vue.
+      // 410 (désactivée) reste une fin de vie : on laisse remonter l'erreur
+      // pour afficher l'écran « adresse plus accessible ».
+      if (!(err instanceof ApiError) || err.status !== 404) throw err;
+      return T(await assembleOwnerView(code));
+    }
   }
   if ((path === '/addresses' || path === '/addresses/mine') && method === 'GET') {
     const rows = await backendFetch<Array<{
