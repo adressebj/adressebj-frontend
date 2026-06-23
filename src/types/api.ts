@@ -109,6 +109,11 @@ export interface PublicAddress {
   /** Note 1-5 laissée par l'utilisateur courant (null si non noté ou
       anonyme). Permet le « upsert » de notes sans localStorage. */
   myRating: number | null;
+  /** État du cycle de vie — renseigné pour la **vue propriétaire** uniquement
+      (une adresse non publiée n'est pas exposée au public). Absent (= publiée)
+      sur la vue visiteur. Permet d'afficher le bandeau « en cours d'analyse »
+      et de bloquer les actions qui exigent une adresse validée. */
+  status?: AddressStatus;
   createdAt: string;
 }
 
