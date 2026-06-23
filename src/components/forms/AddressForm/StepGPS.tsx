@@ -285,8 +285,14 @@ function AcquiringPanel({
 
   const accuracy = Math.round(reading.accuracy);
   const isPrecise = accuracy <= ACCURACY_THRESHOLD_METERS;
+  // Position très approximative : typiquement un ordinateur (pas de GPS), dont
+  // la position est estimée par le réseau (Wi-Fi + IP). On la garde — l'habitant
+  // peut valider tel quel ou affiner — au lieu de bloquer.
   const tooImprecise = accuracy > ACCURACY_HARD_CAP_METERS;
-  const canValidate = !tooImprecise && (isPrecise || relaxed);
+  // Une position imprécise par le réseau ne s'améliorera pas (pas de GPS) : on
+  // autorise sa validation immédiate. Une position en cours d'affinage (GPS
+  // mobile, 15–150 m) reste soumise au délai de relâche habituel.
+  const canValidate = isPrecise || relaxed || tooImprecise;
 
   const validateButton = (
     <Button
@@ -304,9 +310,11 @@ function AcquiringPanel({
         )
       }
     >
-      {canValidate
+      {isPrecise
         ? 'Je suis devant ma porte'
-        : `Précision en cours… (${accuracy} m)`}
+        : canValidate
+          ? 'Valider cette position'
+          : `Précision en cours… (${accuracy} m)`}
     </Button>
   );
 
@@ -340,20 +348,18 @@ function AcquiringPanel({
   if (!showMap) {
     return (
       <div className="flex flex-col gap-4">
-        <StatusRow
-          accuracy={accuracy}
-          isPrecise={isPrecise}
-          tooImprecise={tooImprecise}
-        />
+        <StatusRow accuracy={accuracy} isPrecise={isPrecise} />
         <p className="code-type text-sm text-text-muted tabular-nums">
           {reading.lat.toFixed(5)}° N, {reading.lng.toFixed(5)}° E
         </p>
 
         {tooImprecise ? (
           <p className="text-sm text-text-muted leading-relaxed">
-            Votre appareil ne donne pas une position assez précise. C’est souvent
-            le cas sur un ordinateur, sans GPS. Essayez depuis votre téléphone, à
-            l’extérieur.
+            Position approximative (≈ {accuracy} m). Sur un ordinateur, elle est
+            estimée à partir du réseau (Wi-Fi et adresse IP), donc peu précise.
+            Vous pouvez la valider ainsi — votre photo et vos instructions
+            aideront à vous trouver. Pour une précision maximale, créez l’adresse
+            depuis votre téléphone, dehors ; ou saisissez vos coordonnées.
           </p>
         ) : !isPrecise && relaxed ? (
           <p className="text-sm text-text-muted leading-relaxed">
@@ -363,7 +369,7 @@ function AcquiringPanel({
         ) : null}
 
         <div className="flex flex-col gap-2.5 pt-1">
-          {tooImprecise ? manualButton : validateButton}
+          {validateButton}
           <div className="flex items-center justify-between text-sm">
             <button
               type="button"
@@ -373,15 +379,13 @@ function AcquiringPanel({
               <RotateCw className="h-3.5 w-3.5" aria-hidden="true" />
               Reprendre les mesures
             </button>
-            {!tooImprecise ? (
-              <button
-                type="button"
-                onClick={onManual}
-                className="font-medium text-primary hover:underline cursor-pointer"
-              >
-                Saisir les coordonnées
-              </button>
-            ) : null}
+            <button
+              type="button"
+              onClick={onManual}
+              className="font-medium text-primary hover:underline cursor-pointer"
+            >
+              Saisir les coordonnées
+            </button>
           </div>
         </div>
       </div>
@@ -392,16 +396,20 @@ function AcquiringPanel({
   if (tooImprecise) {
     return (
       <div className="flex flex-col gap-4">
-        <AccuracyBadge accuracy={accuracy} isPrecise={false} tooImprecise />
-        <StepNote variant="danger" icon={Info} role="alert">
-          Votre appareil ne donne pas une position assez précise ({accuracy} m).
-          C’est souvent le cas sur un ordinateur, qui n’a pas de GPS. Essayez
-          depuis votre téléphone, à l’extérieur, ou saisissez vos coordonnées.
+        <div className="relative overflow-hidden rounded-[var(--radius-lg)] border border-border-strong shadow-md">
+          <MapPreview destination={reading} interactive={false} />
+        </div>
+        <StepNote variant="warning" icon={Info}>
+          Position approximative (≈ {accuracy} m). Sur un ordinateur, elle est
+          estimée à partir du réseau (Wi-Fi et adresse IP), donc peu précise.
+          Vous pouvez la valider ainsi ; pour une précision maximale, créez
+          l’adresse depuis votre téléphone, dehors, ou saisissez vos coordonnées.
         </StepNote>
         <div className="flex flex-col sm:flex-row gap-2">
+          {validateButton}
           {manualButton}
-          {restartButton}
         </div>
+        <div className="flex justify-center">{restartButton}</div>
       </div>
     );
   }
@@ -463,27 +471,15 @@ function AcquiringPanel({
 function StatusRow({
   accuracy,
   isPrecise,
-  tooImprecise,
 }: {
   accuracy: number;
   isPrecise: boolean;
-  tooImprecise: boolean;
 }) {
-  const label = isPrecise
-    ? 'Position trouvée'
-    : tooImprecise
-      ? 'Position non fiable'
-      : 'Position approximative';
-  const tone = isPrecise
-    ? 'text-success'
-    : tooImprecise
-      ? 'text-danger'
-      : 'text-warning';
-  const dot = isPrecise
-    ? 'bg-success animate-pulse'
-    : tooImprecise
-      ? 'bg-danger'
-      : 'bg-warning';
+  // Approximative ou non, la position reste validable : pas de framing « non
+  // fiable » (anxiogène et désormais faux). Précise = succès, sinon nuance.
+  const label = isPrecise ? 'Position trouvée' : 'Position approximative';
+  const tone = isPrecise ? 'text-success' : 'text-warning';
+  const dot = isPrecise ? 'bg-success animate-pulse' : 'bg-warning';
   return (
     <div className="flex items-center justify-between gap-3" aria-live="polite">
       <span className="flex items-center gap-2">
@@ -502,53 +498,6 @@ function StatusRow({
   );
 }
 
-function AccuracyBadge({
-  accuracy,
-  isPrecise,
-  tooImprecise,
-}: {
-  accuracy: number;
-  isPrecise: boolean;
-  tooImprecise: boolean;
-}) {
-  return (
-    <div
-      className={classNames(
-        'flex items-center justify-between gap-3 rounded-[var(--radius-md)] px-4 py-3 border',
-        isPrecise
-          ? 'bg-primary-surface border-primary/30 text-primary'
-          : tooImprecise
-            ? 'bg-danger-light border-danger/30 text-danger'
-            : 'bg-surface-muted border-border text-text-muted',
-      )}
-      aria-live="polite"
-    >
-      <div className="flex items-center gap-2">
-        <span
-          aria-hidden="true"
-          className={classNames(
-            'inline-flex h-2.5 w-2.5 rounded-full',
-            isPrecise
-              ? 'bg-success animate-pulse'
-              : tooImprecise
-                ? 'bg-danger'
-                : 'bg-warning',
-          )}
-        />
-        <span className="text-sm font-medium">
-          {isPrecise
-            ? 'Position trouvée'
-            : tooImprecise
-              ? 'Position non fiable'
-              : 'Recherche en cours…'}
-        </span>
-      </div>
-      <span className="text-sm font-display font-bold tabular-nums">
-        ± {accuracy} m
-      </span>
-    </div>
-  );
-}
 
 interface ManualPanelProps {
   reason: ManualReason;
