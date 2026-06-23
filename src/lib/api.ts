@@ -771,11 +771,63 @@ async function realFetch<T>(path: string, options: FetchOptions): Promise<T> {
     );
     return T({ revoked: k.status === 'REVOKED', revokedAt: k.revokedAt });
   }
-  if (path === '/admin/reports' && method === 'GET') {
-    return T(await backendFetch('/moderation/reports', { auth: 'jwt' }));
+  // ── File 2 : signalements (liste, détail, clôture) ──────────────────────────
+  if (path.startsWith('/admin/reports')) {
+    const reportId = path.match(/^\/admin\/reports\/([^/?]+)/)?.[1];
+    const mapReport = (r: {
+      id: string; addressCode: string; message: string | null; createdAt: string;
+    }) => ({ id: r.id, addressId: r.addressCode, message: r.message, resolved: false, createdAt: r.createdAt });
+    type RawReport = Parameters<typeof mapReport>[0];
+
+    if (!reportId && method === 'GET') {
+      const rows = await backendFetch<RawReport[]>('/moderation/reports', { auth: 'jwt' });
+      return T(rows.map(mapReport));
+    }
+    if (reportId && method === 'GET') {
+      const rows = await backendFetch<RawReport[]>('/moderation/reports', { auth: 'jwt' });
+      const r = rows.find((x) => x.id === reportId);
+      if (!r) throw new ApiError(404, 'REPORT_NOT_FOUND', 'Signalement introuvable.');
+      const address = await backendFetch<Parameters<typeof toPublicShape>[0]>(
+        `/addresses/${r.addressCode}`,
+      ).then(toPublicShape).catch(() => null);
+      return T({ report: mapReport(r), address });
+    }
+    if (reportId && method === 'PATCH') {
+      // « resolved » comme « ignored » → on clôt le signalement (resolve). La
+      // désactivation de l'adresse signalée passe par /admin/addresses/:code/deactivate.
+      await backendFetch(`/moderation/reports/${reportId}/resolve`, { method: 'PATCH', auth: 'jwt' });
+      return T({ updated: true });
+    }
   }
-  if (path === '/admin/contributions' && method === 'GET') {
-    return T(await backendFetch('/moderation/contributions', { auth: 'jwt' }));
+
+  // ── File 3 : contributions terrain (liste, décision) ────────────────────────
+  if (path.startsWith('/admin/contributions')) {
+    const contribId = path.match(/^\/admin\/contributions\/([^/?]+)/)?.[1];
+    if (!contribId && method === 'GET') {
+      const status = new URL(path, 'http://x.local').searchParams.get('status');
+      // Le backend ne liste que les contributions EN ATTENTE.
+      if (status && status !== 'PENDING') return T([]);
+      const rows = await backendFetch<Array<{
+        id: string; addressCode: string; message: string; createdAt: string;
+      }>>('/moderation/contributions', { auth: 'jwt' });
+      return T(rows.map((c) => ({
+        id: c.id,
+        addressId: c.addressCode,
+        addressCode: c.addressCode,
+        status: 'PENDING',
+        direction: c.message,
+        entrySide: null,
+        createdAt: c.createdAt,
+      })));
+    }
+    if (contribId && method === 'PATCH') {
+      const decision = (body as { status: 'approved' | 'rejected' }).status;
+      await backendFetch(
+        `/moderation/contributions/${contribId}/${decision === 'approved' ? 'approve' : 'reject'}`,
+        { method: 'PATCH', auth: 'jwt' },
+      );
+      return T({ updated: true });
+    }
   }
   if (path === '/admin/moderators' && method === 'POST') {
     // Le backend crée un modérateur par email+password (pas par téléphone).
