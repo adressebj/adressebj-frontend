@@ -1,6 +1,6 @@
 import type { JwtPayload, Role } from '@/types/api';
 
-const TOKEN_KEY = 'adressebj_token';
+export const TOKEN_KEY = 'adressebj_token';
 
 // Le backend émet les rôles en français (HABITANT / MODERATEUR / ADMIN) ;
 // le frontend raisonne en CREATOR / MODERATOR / ADMIN. On normalise au
