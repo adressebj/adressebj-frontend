@@ -535,7 +535,7 @@ export const contributions: Contribution[] = [
 
 export interface AdminStats {
   activeAddresses: number;
-  visitsToday: number;
+  pendingRevisions: number;
   pendingReports: number;
   activeQuartiers: number;
 }
@@ -544,8 +544,8 @@ export function adminStats(): AdminStats {
   const activeAddresses = addresses.filter((a) => a.isActive).length;
   const activeQuartiers = quartiers.filter((q) => q.isActive).length;
   const pendingReports = reports.filter((r) => !r.resolved).length;
-  // No visits store in the mock — surface a stable mock figure.
-  return { activeAddresses, visitsToday: 47, pendingReports, activeQuartiers };
+  const pendingRevisions = getModerationQueue().length;
+  return { activeAddresses, pendingRevisions, pendingReports, activeQuartiers };
 }
 
 // ─── Habitants ─────────────────────────────────────────────────────────────

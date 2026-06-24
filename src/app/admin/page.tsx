@@ -2,9 +2,9 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import {
-  Activity,
   Bell,
   Database,
+  FileClock,
   Flag,
   MapPin,
   type LucideIcon,
@@ -24,7 +24,7 @@ interface CardSpec {
 
 const CARDS: CardSpec[] = [
   { key: 'activeAddresses', label: 'Adresses actives', icon: Database, tone: 'primary' },
-  { key: 'visitsToday', label: 'Visites aujourd’hui', icon: Activity, tone: 'accent' },
+  { key: 'pendingRevisions', label: 'Révisions en attente', icon: FileClock, tone: 'accent' },
   { key: 'pendingReports', label: 'Signalements en attente', icon: Flag, tone: 'danger' },
   { key: 'activeQuartiers', label: 'Quartiers actifs', icon: MapPin, tone: 'info' },
 ];
@@ -82,7 +82,9 @@ export default function AdminHomePage() {
                   tone={card.tone}
                   value={
                     stats ? (
-                      stats[card.key].toLocaleString('fr-FR')
+                      // Garde-fou : un indicateur manquant affiche « 0 » plutôt
+                      // que de faire planter tout le tableau de bord.
+                      (stats[card.key] ?? 0).toLocaleString('fr-FR')
                     ) : (
                       <Skeleton width={80} height={32} />
                     )

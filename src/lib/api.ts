@@ -713,7 +713,24 @@ async function realFetch<T>(path: string, options: FetchOptions): Promise<T> {
 
   // ── Administration : routes alignées sur le backend existant ────────────────
   if (path === '/admin/stats' && method === 'GET') {
-    return T(await backendFetch('/admin/stats', { auth: 'jwt' }));
+    // Le backend renvoie une structure imbriquée (addresses/quartiers/moderation…)
+    // qu'on aplatit vers les 4 indicateurs du tableau de bord. Le contrat
+    // `AdminStats` est plat : sans ce remappage, toutes les clés seraient
+    // `undefined` et la page planterait sur `.toLocaleString()`.
+    const s = await backendFetch<{
+      addresses: { total: number; active: number; deactivated: number; published: number };
+      quartiers: { total: number; active: number };
+      moderation: { pendingRevisions: number; pendingReports: number; pendingContributions: number };
+      habitants: number;
+      apiKeysActive: number;
+    }>('/admin/stats', { auth: 'jwt' });
+    const mapped: AdminStats = {
+      activeAddresses: s.addresses.active,
+      pendingRevisions: s.moderation.pendingRevisions,
+      pendingReports: s.moderation.pendingReports,
+      activeQuartiers: s.quartiers.active,
+    };
+    return T(mapped);
   }
   if (path === '/admin/quartiers' && method === 'GET') {
     return T(await backendFetch('/admin/quartiers', { auth: 'jwt' }));
